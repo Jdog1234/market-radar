@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'" />
+  <title>Market Radar</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <aside class="side">
+    <div class="brand"><span class="logo">◎</span> Market Radar</div>
+    <nav id="nav">
+      <button data-view="signals" class="active">Signals</button>
+      <button data-view="watchlist">Watchlist</button>
+      <button data-view="news">News feed</button>
+      <button data-view="calendar">Economic calendar</button>
+      <button data-view="earnings">Earnings</button>
+      <button data-view="guide">Research guide</button>
+      <button data-view="settings">Settings</button>
+    </nav>
+    <div class="side-foot" id="stats"></div>
+  </aside>
+
+  <main>
+    <header class="top">
+      <div id="regime" class="regime"></div>
+      <div class="top-right">
+        <span id="scanned" class="muted"></span>
+        <button id="refresh" class="btn">Refresh now</button>
+      </div>
+      <div id="progress" class="progress hidden"><div class="bar"></div><span class="label"></span></div>
+    </header>
+
+    <section id="view-signals" class="view">
+      <div id="alerts"></div>
+      <div class="cols">
+        <div class="col">
+          <h2 class="up">▲ Bullish catalysts <span class="muted small">— news pointing up</span></h2>
+          <div id="bull" class="cards"></div>
+        </div>
+        <div class="col">
+          <h2 class="down">▼ Bearish catalysts <span class="muted small">— news pointing down</span></h2>
+          <div id="bear" class="cards"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-watchlist" class="view hidden">
+      <h2>Your watchlist</h2>
+      <p class="muted small">Every stock here is scanned each refresh, with or without news. Edit the list in Settings.</p>
+      <div id="watch" class="cards grid"></div>
+    </section>
+
+    <section id="view-news" class="view hidden">
+      <div class="toolbar">
+        <input id="newsSearch" type="search" placeholder="Search headlines or tickers…" />
+        <div class="chips" id="newsFilters">
+          <button data-f="all" class="on">All</button>
+          <button data-f="bull">Bullish</button>
+          <button data-f="bear">Bearish</button>
+          <button data-f="tagged">With tickers</button>
+          <button data-f="macro">Macro</button>
+          <button data-f="forex">Forex</button>
+        </div>
+      </div>
+      <div id="newsList" class="news"></div>
+    </section>
+
+    <section id="view-calendar" class="view hidden">
+      <div class="toolbar">
+        <div class="chips" id="ccyFilters"></div>
+        <label class="check"><input type="checkbox" id="highOnly" /> High impact only</label>
+      </div>
+      <div id="nextEvent"></div>
+      <div id="calList"></div>
+    </section>
+
+    <section id="view-earnings" class="view hidden">
+      <div class="toolbar">
+        <input id="earnSearch" type="search" placeholder="Filter by ticker or company…" />
+        <label class="check"><input type="checkbox" id="earnBig" checked /> $10B+ companies only</label>
+      </div>
+      <p class="muted small">Earnings are binary events: a stock can gap ±10% overnight no matter what the news looked like. Stocks highlighted here also appear in your signal lists.</p>
+      <div id="earnList"></div>
+    </section>
+
+    <section id="view-guide" class="view hidden"><article id="guide" class="md"></article></section>
+
+    <section id="view-settings" class="view hidden">
+      <h2>Settings</h2>
+      <form id="settingsForm" class="form">
+        <label>Watchlist <span class="muted small">(tickers, separated by spaces or commas)</span>
+          <textarea name="watchlist" rows="3"></textarea></label>
+        <div class="row">
+          <label>Auto-refresh every (minutes)<input name="refreshMinutes" type="number" min="5" max="240" /></label>
+          <label>Minimum market cap ($ millions)<input name="minMarketCapM" type="number" min="0" step="50" /></label>
+          <label>Minimum share price ($)<input name="minPrice" type="number" min="0" step="0.5" /></label>
+        </div>
+        <label class="check"><input type="checkbox" name="notify" /> Desktop notification for new high-confidence signals</label>
+        <div><button class="btn" type="submit">Save</button> <span id="saved" class="muted small"></span></div>
+      </form>
+      <div class="card about">
+        <h3>Data sources</h3>
+        <p class="small muted">News: CNBC, MarketWatch, Seeking Alpha, Investing.com, FXStreet, PR Newswire and targeted Google News searches. Prices, movers and earnings: Nasdaq public data. Economic calendar: ForexFactory. All free — no accounts or API keys. Feeds can rate-limit; a failed source is skipped and retried next refresh.</p>
+        <div id="feedStatus" class="small"></div>
+      </div>
+    </section>
+
+    <footer class="disclaimer">Signals are automated news analysis, not financial advice or a prediction. Always read the source articles and manage your own risk.</footer>
+  </main>
+
+  <div id="drawer" class="drawer hidden"><div class="drawer-inner"></div></div>
+  <script src="app.js"></script>
+</body>
+</html>
