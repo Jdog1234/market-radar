@@ -1,5 +1,5 @@
 // The tradable universe (all Nasdaq/NYSE/AMEX listings) and headline → ticker tagging.
-const { get } = require('./http');
+const { get, mapLimit } = require('./http');
 
 const SCREENER = 'https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=10000&download=true';
 
@@ -45,12 +45,94 @@ function num(s) {
 }
 
 let universe = null;
+let cacheDir = null;
+const BACKUP = 'https://github.com/Jdog1234/market-radar/releases/latest/download/universe.json';
+const FRESH_MS = 10 * 60e3;
 
+// Where to keep the on-disk copy of the stock list (set by the app at startup).
+function setCacheDir(dir) {
+  cacheDir = dir;
+}
+const cacheFile = () => (cacheDir ? require('path').join(cacheDir, 'universe.json') : null);
+
+function readDisk() {
+  try {
+    return JSON.parse(require('fs').readFileSync(cacheFile(), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+// The stock list doubles as a live price feed: one request gives the latest price and
+// volume for ~7,000 stocks. Sources, in order: Nasdaq → copy in memory → copy on disk →
+// copy published with the latest GitHub release.
 async function loadUniverse() {
-  if (universe) return universe;
-  const data = await get(SCREENER, { json: true, ttlMs: 12 * 3600e3, timeoutMs: 30000, retries: 2 });
+  if (universe && Date.now() - universe.fetchedAt < FRESH_MS) return universe;
+  let snap = null;
+  try {
+    const data = await get(SCREENER, { json: true, timeoutMs: 30000, retries: 1 });
+    snap = { at: Date.now(), rows: data.data.rows, live: true };
+    if (cacheFile()) require('fs').writeFileSync(cacheFile(), JSON.stringify({ at: snap.at, rows: snap.rows }));
+  } catch {
+    if (universe) return universe;
+    const disk = readDisk();
+    if (disk?.rows?.length) snap = { ...disk, live: false };
+    else {
+      let copy;
+      try {
+        copy = await get(`${BACKUP}?t=${Date.now()}`, { json: true, timeoutMs: 30000 });
+        if (!copy?.rows?.length) throw new Error('empty');
+      } catch {
+        copy = await rebuildFromCnbc();
+      }
+      snap = { ...copy, live: false };
+      if (cacheFile()) require('fs').writeFileSync(cacheFile(), JSON.stringify(copy));
+    }
+  }
+  universe = build(snap);
+  return universe;
+}
+
+// Last resort: every US-listed stock from Nasdaq Trader's symbol files, with name, price,
+// volume and market cap from CNBC (50 stocks per request). Slow (~1 minute), rarely needed.
+async function rebuildFromCnbc() {
+  const txt = (u) => get(u, { timeoutMs: 30000, headers: { Accept: 'text/plain,*/*' } });
+  const [nas, other] = await Promise.all([
+    txt('https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt'),
+    txt('https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt'),
+  ]);
+  const syms = new Set();
+  // nasdaqlisted: Symbol|Name|Category|Test|Status|Lot|ETF|NextShares
+  for (const l of nas.split('\n').slice(1)) {
+    const f = l.split('|');
+    if (f.length > 6 && f[3] === 'N' && f[6] === 'N') syms.add(f[0]);
+  }
+  // otherlisted: Symbol|Name|Exchange|CQS|ETF|Lot|Test|NasdaqSymbol
+  for (const l of other.split('\n').slice(1)) {
+    const f = l.split('|');
+    if (f.length > 6 && f[4] === 'N' && f[6] === 'N') syms.add(f[0]);
+  }
+  const list = [...syms].filter((x) => /^[A-Z]{1,5}(\.[A-Z])?$/.test(x));
+  const batches = [];
+  for (let i = 0; i < list.length; i += 50) batches.push(list.slice(i, i + 50));
+  const capNum = (v) => {
+    const m = String(v || '').match(/([\d.]+)\s*([TBMK])?/);
+    return m ? +m[1] * ({ T: 1e12, B: 1e9, M: 1e6, K: 1e3 }[m[2]] || 1) : null;
+  };
+  const rows = (await mapLimit(batches, 4, async (b) => {
+    const d = await get(`https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${encodeURIComponent(b.join('|'))}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json`, { json: true, timeoutMs: 20000 });
+    return (d?.FormattedQuoteResult?.FormattedQuote || []).filter((q) => q.name && q.last).map((q) => ({
+      symbol: q.symbol, name: q.name, lastsale: q.last, pctchange: q.change_pct, volume: q.volume,
+      marketCap: capNum(q.mktcapView), sector: '', industry: '',
+    }));
+  })).flat().filter(Boolean);
+  if (rows.length < 1000) throw new Error('Could not build the stock list');
+  return { at: Date.now(), rows };
+}
+
+function build(snap) {
   const bySymbol = new Map();
-  for (const r of data.data.rows) {
+  for (const r of snap.rows) {
     const symbol = r.symbol.trim().replace('/', '.');
     bySymbol.set(symbol, {
       symbol,
@@ -58,6 +140,7 @@ async function loadUniverse() {
       short: coreName(r.name),
       price: num(r.lastsale),
       pctChange: num(r.pctchange),
+      volume: num(r.volume),
       marketCap: num(r.marketCap),
       sector: r.sector || '',
       industry: r.industry || '',
@@ -86,8 +169,8 @@ async function loadUniverse() {
   for (let i = 0; i < names.length; i += 400) {
     chunks.push(new RegExp(`(?<![\\w$])(${names.slice(i, i + 400).map(esc).join('|')})(?:'s|’s)?(?![\\w-])`, 'g'));
   }
-  universe = { bySymbol, nameIndex, nameRegexes: chunks };
-  return universe;
+  // `live` = prices are from right now (not a cached copy), so they can serve as today's bar.
+  return { bySymbol, nameIndex, nameRegexes: chunks, fetchedAt: Date.now(), dataAt: snap.at, live: !!snap.live };
 }
 
 const EXPLICIT = [
@@ -121,4 +204,4 @@ function tagTickers(text, u, { allowNames = true } = {}) {
   return [...found];
 }
 
-module.exports = { loadUniverse, tagTickers, num };
+module.exports = { loadUniverse, setCacheDir, tagTickers, num };

@@ -4,10 +4,18 @@ const UA =
 
 const cache = new Map();
 
+// Circuit breaker: when a host starts refusing us (403/429), stop calling it for a while
+// and let callers fall back to other sources, instead of hammering it into a longer ban.
+const blockedUntil = new Map();
+const BLOCK_MS = 20 * 60e3;
+const hostOf = (url) => new URL(url).host;
+const isBlocked = (url) => (blockedUntil.get(hostOf(url)) || 0) > Date.now();
+
 async function get(url, { json = false, ttlMs = 0, timeoutMs = 15000, retries = 1, headers = {} } = {}) {
   const key = url;
   const hit = cache.get(key);
   if (ttlMs && hit && Date.now() - hit.at < ttlMs) return hit.value;
+  if (isBlocked(url)) throw new Error(`${hostOf(url)} is temporarily refusing requests`);
 
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -23,12 +31,17 @@ async function get(url, { json = false, ttlMs = 0, timeoutMs = 15000, retries = 
           ...headers,
         },
       });
+      if (res.status === 403 || res.status === 429) {
+        blockedUntil.set(hostOf(url), Date.now() + BLOCK_MS);
+        throw Object.assign(new Error(`HTTP ${res.status} for ${url}`), { blocked: true });
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
       const value = json ? await res.json() : await res.text();
       if (ttlMs) cache.set(key, { at: Date.now(), value });
       return value;
     } catch (err) {
       lastErr = err;
+      if (err.blocked) break;
       if (attempt < retries) await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
     } finally {
       clearTimeout(timer);
@@ -55,4 +68,4 @@ async function mapLimit(items, limit, fn) {
   return out;
 }
 
-module.exports = { get, mapLimit };
+module.exports = { get, mapLimit, isBlocked };

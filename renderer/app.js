@@ -190,7 +190,7 @@ function renderHeader() {
      <span class="${cls(i.ret1)}">${pct(i.ret1)}</span><span class="muted">${esc(i.state)}</span>${spark(i.spark, 60, 18)}</div>`).join('');
   $('#scanned').textContent = `Updated ${new Date(data.scannedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
   const s = data.stats;
-  $('#stats').innerHTML = `${s.headlines} headlines read<br>${s.tagged} linked to stocks<br>${s.candidates} stocks scored · ${s.priced} price-checked`;
+  $('#stats').innerHTML = `${s.sources ? `${s.sources} sources · ` : ''}${s.headlines} headlines read<br>${s.tagged} linked to stocks<br>${s.candidates} stocks scored · ${s.priced} price-checked`;
   const bad = s.feeds.filter((f) => !f.ok);
   $('#feedStatus').innerHTML = `<p>${s.feeds.length - bad.length}/${s.feeds.length} sources OK on the last scan.</p>` +
     bad.map((f) => `<div class="fs"><span class="bad">✕</span>${esc(f.name)} <span class="muted">${esc(f.error)}</span></div>`).join('');
@@ -200,6 +200,8 @@ function renderAll() {
   if (!data) return;
   renderHeader();
   renderSignals();
+  renderBefore();
+  renderTrades();
   renderNews();
   renderCalendar();
   renderEarnings();
@@ -251,6 +253,9 @@ async function loadSettings() {
   f.minMarketCapM.value = Math.round(s.minMarketCap / 1e6);
   f.minPrice.value = s.minPrice;
   f.notify.checked = s.notify;
+  f.accountSize.value = s.accountSize;
+  f.riskPct.value = s.riskPct;
+  settingsCache = s;
 }
 
 $('#settingsForm').addEventListener('submit', async (e) => {
@@ -262,7 +267,11 @@ $('#settingsForm').addEventListener('submit', async (e) => {
     minMarketCap: (Number(f.minMarketCapM.value) || 0) * 1e6,
     minPrice: Number(f.minPrice.value) || 0,
     notify: f.notify.checked,
+    accountSize: Number(f.accountSize.value) || 0,
+    riskPct: Number(f.riskPct.value) || 1,
   });
+  settingsCache = await radar.getSettings();
+  if (data) renderTrades();
   $('#saved').textContent = 'Saved — rescanning…';
   await radar.runScan();
   $('#saved').textContent = 'Saved.';
@@ -280,6 +289,8 @@ $('#nav').addEventListener('click', (e) => {
 });
 
 document.addEventListener('click', (e) => {
+  const gd = e.target.closest('[data-guide]');
+  if (gd) { showView('guide'); return; }
   const lk = e.target.closest('[data-lookup]');
   if (lk) { $('#drawer').classList.add('hidden'); openLookup(lk.dataset.lookup); return; }
   const a = e.target.closest('[data-url]');
@@ -525,3 +536,79 @@ radar.onUpdate(renderUpdate);
   $('#version').textContent = `v${info.version}${info.fromUpdate ? ' (auto-updated)' : ''}`;
   renderUpdate(await radar.updateStatus());
 })();
+
+// ---------- before the move ----------
+let settingsCache = null;
+
+function oppCard(o, kind) {
+  const t = o.tech || {};
+  const hls = (o.headlines || []).slice(0, 2).map((h) =>
+    `<div><a data-url="${esc(h.link)}" title="${esc(h.title)}">${esc(h.title)}</a><span class="meta">${esc(h.publisher)} · ${ago(h.publishedAt)}</span></div>`).join('');
+  return `<div class="card">
+    <div class="sig-head">
+      <a class="sym" data-lookup="${esc(o.symbol)}">${esc(o.symbol)}</a><span class="name">${esc(o.name)}</span>
+      ${kind === 'earnings' ? `<span class="tag">Earnings ${esc(new Date(o.reportDate + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }))}</span>` : `<span class="conf ${o.confidence}">${o.confidence}</span>`}
+    </div>
+    <div class="why">${esc(o.why)}</div>
+    <div class="sig-mid">
+      ${t.last ? `<span><b>${money(t.last)}</b> <span class="${cls(t.ret1)}">${pct(t.ret1)}</span></span>` : ''}
+      ${t.atrPct ? `<span>Normal day ±${t.atrPct.toFixed(1)}%</span>` : ''}
+      ${t.rvol ? `<span>RVOL <b>${t.rvol.toFixed(1)}×</b></span>` : ''}
+      ${t.spark ? spark(t.spark) : ''}
+    </div>
+    ${o.reasons ? `<div class="chips">${catChips(o.reasons, 3)}</div>` : ''}
+    ${hls ? `<div class="hl">${hls}</div>` : ''}
+  </div>`;
+}
+
+function renderBefore() {
+  const b = data.beforeMove || { up: [], down: [] };
+  const e = data.earningsSetups || { up: [], down: [] };
+  const none = (msg) => `<div class="empty">${msg}</div>`;
+  $('#beforeUp').innerHTML = b.up.map((o) => oppCard(o)).join('') || none('No unpriced bullish news right now.');
+  $('#beforeDown').innerHTML = b.down.map((o) => oppCard(o)).join('') || none('No unpriced bearish news right now.');
+  $('#earnUp').innerHTML = e.up.map((o) => oppCard(o, 'earnings')).join('') || none('No reporting company with a 4-quarter beat streak and uptrend this week.');
+  $('#earnDown').innerHTML = e.down.map((o) => oppCard(o, 'earnings')).join('') || none('No reporting company with a miss streak and downtrend this week.');
+}
+
+// ---------- trade ideas ----------
+function renderTrades() {
+  const s = settingsCache || { accountSize: 10000, riskPct: 1 };
+  const riskDollars = (s.accountSize * s.riskPct) / 100;
+  $('#sizing').innerHTML = s.accountSize
+    ? `Position sizes below risk <b>${s.riskPct}%</b> of a <b>$${Number(s.accountSize).toLocaleString()}</b> account, so <b>$${riskDollars.toFixed(0)}</b> is lost if the stop is hit. Change this in Settings.`
+    : 'Set your account size in Settings to see position sizes.';
+  const list = data.trades || [];
+  $('#tradeList').innerHTML = list.map((t) => {
+    const perShare = Math.abs(t.entry - t.stop);
+    const shares = s.accountSize && perShare ? Math.floor(riskDollars / perShare) : 0;
+    const cost = shares * t.entry;
+    const ch = t.chance || {};
+    const chance = ch.winRate != null
+      ? `<b class="${ch.winRate > 33 ? 'up' : 'down'}">${ch.winRate.toFixed(0)}% win rate</b> across ${ch.decided} past ${ch.basis === 'catalyst' ? `"${esc(t.catalyst)}"` : ch.basis === 'type' ? `${esc(t.type)}` : ''} trade ideas from this app (target hit before stop). Breakeven is 33%.`
+      : `<b>Win rate: building history.</b> ${ch.logged || 0} trade ideas logged so far. The app shows a measured win rate once 15+ similar ideas have played out. Breakeven for a 2:1 trade is 33%.`;
+    const flags = (t.flags || []).filter((f) => f.kind === 'warn').map((f) => `<div class="flag warn">⚠ ${esc(f.text)}</div>`).join('');
+    const typeLabel = { news: 'News not yet priced in', momentum: 'News + price confirmed', earnings: 'Earnings play (higher risk)' }[t.type] || t.type;
+    return `<div class="card trade ${t.dir}">
+      <div class="sig-head">
+        <span class="sym ${t.dir === 'up' ? 'up' : 'down'}">${t.dir === 'up' ? '▲' : '▼'} ${esc(t.side)}</span>
+        <a class="sym" data-lookup="${esc(t.symbol)}">${esc(t.symbol)}</a><span class="name">${esc(t.name)}</span>
+        <span class="tag">${esc(typeLabel)}</span>
+      </div>
+      <div class="why">${esc(t.why)}</div>
+      <div class="levels">
+        <div><span>Entry</span><b>${money(t.entry)}</b></div>
+        <div class="stop"><span>Stop (−${t.riskPct.toFixed(1)}%)</span><b>${money(t.stop)}</b></div>
+        <div class="tgt"><span>Target (+${t.rewardPct.toFixed(1)}%)</span><b>${money(t.target)}</b></div>
+        <div><span>Time frame</span><b style="font-size:12.5px">${esc(t.horizon)}</b></div>
+      </div>
+      <div class="note">${esc(t.entryNote)}</div>
+      <div class="note">${esc(t.exitNote)}</div>
+      ${shares ? `<div class="note">Size: <b>${shares} shares</b> (~$${cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}${cost > s.accountSize ? ', more than your account, so reduce it' : ''})</div>` : ''}
+      ${flags ? `<div class="flags">${flags}</div>` : ''}
+      <div class="chance">${chance}</div>
+    </div>`;
+  }).join('') || '<div class="empty">No trade ideas pass the filters right now. That is normal on quiet news days.</div>';
+}
+
+radar.getSettings().then((s) => { settingsCache = s; if (data) renderTrades(); });

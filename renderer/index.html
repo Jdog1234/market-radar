@@ -11,6 +11,8 @@
     <div class="brand"><span class="logo">◎</span> Market Radar</div>
     <nav id="nav">
       <button data-view="signals" class="active">Signals</button>
+      <button data-view="before">Before the move</button>
+      <button data-view="trades">Trade ideas</button>
       <button data-view="lookup">Stock lookup</button>
       <button data-view="watchlist">Watchlist</button>
       <button data-view="news">News feed</button>
@@ -92,6 +94,27 @@
       <div id="earnList"></div>
     </section>
 
+    <section id="view-before" class="view hidden">
+      <h2>Before the move</h2>
+      <p class="muted small intro">Stocks with strong news that the price <b>hasn't reacted to yet</b>. Research on news drift finds the move after news is largest when the first reaction was small. Below them: companies reporting earnings soon whose track record points one way. <a data-guide="9">How this works</a></p>
+      <div class="cols">
+        <div class="col"><h2 class="up">▲ Could go up</h2><div id="beforeUp" class="cards"></div></div>
+        <div class="col"><h2 class="down">▼ Could go down</h2><div id="beforeDown" class="cards"></div></div>
+      </div>
+      <h2 style="margin-top:26px">Earnings coming up <span class="muted small">— reports in the next week, with a consistent beat/miss streak</span></h2>
+      <div class="cols">
+        <div class="col"><div id="earnUp" class="cards"></div></div>
+        <div class="col"><div id="earnDown" class="cards"></div></div>
+      </div>
+    </section>
+
+    <section id="view-trades" class="view hidden">
+      <h2>Trade ideas</h2>
+      <p class="muted small intro">Concrete plans built from the strongest news setups: where to get in, where to get out if wrong (stop), where to take profit (target), and how long the news usually keeps working. Every target is 2× the risk, so you only need to win <b>more than 1 in 3</b> to come out ahead. The <b>win rate</b> shown is measured from this app's own past trade ideas. Until enough have played out, it says so instead of guessing.</p>
+      <div id="sizing" class="card sizing"></div>
+      <div id="tradeList" class="trades"></div>
+    </section>
+
     <section id="view-lookup" class="view hidden">
       <div id="lookup"><div class="empty">Search any US-listed stock in the box at the top (e.g. <b>AAPL</b> or <b>Palantir</b>). You'll get a verdict on whether the news and other evidence point up or down, and why.</div></div>
     </section>
@@ -113,6 +136,10 @@
           <label>Auto-refresh every (minutes)<input name="refreshMinutes" type="number" min="5" max="240" /></label>
           <label>Minimum market cap ($ millions)<input name="minMarketCapM" type="number" min="0" step="50" /></label>
           <label>Minimum share price ($)<input name="minPrice" type="number" min="0" step="0.5" /></label>
+        </div>
+        <div class="row">
+          <label>Account size for trade sizing ($)<input name="accountSize" type="number" min="0" step="100" /></label>
+          <label>Risk per trade (% of account)<input name="riskPct" type="number" min="0.1" max="10" step="0.1" /></label>
         </div>
         <label class="check"><input type="checkbox" name="notify" /> Desktop notification for new high-confidence signals</label>
         <div><button class="btn" type="submit">Save</button> <span id="saved" class="muted small"></span></div>

@@ -1,11 +1,15 @@
 # Market Radar
 
-A desktop app for Mac and Windows (64-bit). It reads ~1,000+ financial headlines every refresh, works out which stocks each story is about, scores the news using catalysts that research shows actually move prices, checks the stock's price trend and volume, and ranks:
+A desktop app for Mac and Windows (64-bit). It reads about 3,000 headlines from ~180 sources every refresh, works out which stocks each story is about, scores the news using catalysts that research shows actually move prices, checks the stock's price trend and volume, and ranks:
 
 - **Bullish catalysts**: stocks with news pointing up
 - **Bearish catalysts**: stocks with news pointing down
 
 **Stock Lookup:** search any US stock (ticker or company name) for a verdict on whether the evidence points up or down. The verdict weighs news catalysts, price trend, analyst consensus and price targets, earnings-surprise history, insider buying, and short interest, and it shows StockTwits crowd sentiment for context.
+
+**Before the move:** stocks with strong news that the price hasn't reacted to yet (the setup the news-drift research favors), plus companies reporting earnings soon with a consistent beat or miss streak.
+
+**Trade ideas:** concrete plans with entry, stop (1.5× the stock's normal daily move), target (2× the risk), time frame, and position size for your account. The win rate shown is measured from the app's own past trade ideas, never guessed.
 
 **Track record:** every scan's signals are logged and checked 1, 5 and 20 trading days later, so you can see how often the calls were actually right.
 
@@ -79,6 +83,6 @@ Code layout:
 
 ## Limits
 
-- Free feeds sometimes rate-limit. A source that fails is skipped and tried again on the next refresh, and the economic calendar is cached so the app never shows it blank.
+- Free feeds sometimes rate-limit. A source that fails is skipped and tried again on the next refresh. If Nasdaq refuses requests, prices switch to CNBC and the stock list comes from a saved copy (on disk, then the latest GitHub release, then rebuilt from Nasdaq Trader + CNBC).
 - Matching headlines to tickers is rule-based. It's good but not perfect. Always read the headline.
 - This is automated news analysis, **not financial advice** and not a prediction.

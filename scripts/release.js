@@ -29,6 +29,24 @@ const notes = notesIdx >= 0 ? args[notesIdx + 1] : '';
 const run = (cmd, opts = {}) => execSync(cmd, { stdio: 'inherit', cwd: ROOT, ...opts });
 const out = (cmd) => execSync(cmd, { cwd: ROOT, encoding: 'utf8' }).trim();
 
+// Fresh stock list from Nasdaq, else the app's own cached copy if under a week old.
+async function stockList() {
+  try {
+    const res = await fetch('https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=10000&download=true', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'application/json' },
+    });
+    if (res.ok) return { at: Date.now(), rows: (await res.json()).data.rows };
+  } catch {}
+  const home = require('os').homedir();
+  for (const dir of [path.join(home, 'Library/Application Support/Market Radar'), path.join(process.env.APPDATA || '', 'Market Radar')]) {
+    try {
+      const c = JSON.parse(fs.readFileSync(path.join(dir, 'universe.json'), 'utf8'));
+      if (Date.now() - c.at < 7 * 864e5) return c;
+    } catch {}
+  }
+  return null;
+}
+
 async function main() {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   const version = pkg.version;
@@ -54,8 +72,16 @@ async function main() {
   fs.writeFileSync(path.join(DIST, 'update.json'), JSON.stringify(manifest, null, 2));
   console.log(`✓ Update package ${file} (${(fs.statSync(path.join(DIST, file)).size / 1024).toFixed(0)} KB)`);
 
-  // 2. Installers, so new downloads start on the latest version.
+  // 2. Backup copy of the stock list, used by installed apps if Nasdaq refuses them.
   const assets = [path.join(DIST, 'update.json'), path.join(DIST, file)];
+  const uni = await stockList();
+  if (uni) {
+    fs.writeFileSync(path.join(DIST, 'universe.json'), JSON.stringify(uni));
+    assets.push(path.join(DIST, 'universe.json'));
+    console.log(`✓ Stock list backup (${uni.rows.length} stocks)`);
+  } else console.warn('! No fresh stock list available: release has no universe.json backup');
+
+  // 3. Installers, so new downloads start on the latest version.
   if (!flag('--no-installers')) {
     run('npx electron-builder --mac --win --publish never', { env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' } });
     for (const f of [`Market-Radar-${version}-arm64.dmg`, `Market-Radar-${version}-x64.dmg`, `Market-Radar-Setup-${version}-x64.exe`]) {
@@ -79,7 +105,7 @@ async function main() {
     return;
   }
 
-  // 3. Push the app code to the public repo (only the market-radar folder, nothing else).
+  // 4. Push the app code to the public repo (only the market-radar folder, nothing else).
   const top = out('git rev-parse --show-toplevel');
   const prefix = path.relative(top, ROOT);
   const remotes = out('git remote');
@@ -87,7 +113,7 @@ async function main() {
   const split = out(`git -C "${top}" subtree split --prefix="${prefix}"`);
   run(`git -C "${top}" push market-radar-public ${split}:refs/heads/main --force`);
 
-  // 4. GitHub Release. Installed apps read update.json from the latest release.
+  // 5. GitHub Release. Installed apps read update.json from the latest release.
   const quoted = assets.map((a) => `"${a}"`).join(' ');
   const body = `${notes || 'Improvements and fixes.'}\n\n**Download:** Mac (Apple Silicon) \`arm64.dmg\` · Mac (Intel) \`x64.dmg\` · Windows \`Setup-x64.exe\`.\nAlready installed? The app updates itself automatically.`;
   fs.writeFileSync(path.join(DIST, 'notes.md'), body);

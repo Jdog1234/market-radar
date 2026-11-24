@@ -124,7 +124,7 @@ A stock reporting earnings in the next few days can gap ±10% either way overnig
 
 ## 6. How the app turns this into a score
 
-1. **Collect** headlines every refresh from CNBC, MarketWatch, Seeking Alpha, Investing.com, FXStreet, PR Newswire, and ~15 targeted Google News searches (upgrades, downgrades, guidance, FDA, offerings, short reports, …), plus a news search for every stock on your watchlist.
+1. **Collect** about 3,000 headlines every refresh from ~180 sources: ~45 publisher feeds (CNBC's sector desks, WSJ, MarketWatch, FT, NYT, BBC, Fortune, TechCrunch, TheStreet, Benzinga, Seeking Alpha, Nasdaq, Investing.com, PR Newswire, FXStreet, ForexLive), ~40 catalyst searches across Google News and Bing News, and per-stock searches for your watchlist and the day's biggest movers. A second **deep-dive pass** then pulls Google/Bing, Seeking Alpha and Nasdaq company feeds for every stock that already looks like a signal, to confirm or refute it.
 2. **Tag tickers** in each headline — explicit `(NASDAQ: XYZ)` / `$XYZ` tags, or the company's name matched against the full Nasdaq/NYSE listing (~7,000 stocks).
 3. **Classify** each headline against the catalyst rules above. Each catalyst has a direction, a weight, and a half-life; older news counts less. Repeated headlines about the same event count with diminishing weight so one story syndicated 10 times doesn't look like 10 stories.
 4. **News score** (−10 … +10) = sum of decayed catalyst weights, squashed.
@@ -168,6 +168,43 @@ When you search one stock, the app also pulls data that is too slow to fetch for
 
 ---
 
+## 9. "Before the move" and Trade ideas (added in v1.2)
+
+### Finding moves before they happen
+The research doesn't support predicting moves out of nowhere. What it does support is that **prices under-react to news, and the gap closes over days to weeks:**
+
+- **Slow information diffusion:** Hong & Stein (1999) and Hong, Lim & Stein (2000) show news spreads through the market gradually, especially for smaller and less-covered stocks, so prices keep drifting after news.
+- **News vs. no-news moves** (Chan 2003): after public news, prices continue in the direction of the news, and the drift is strongest for stocks whose initial reaction was small.
+- **Earnings-announcement drift** (PEAD, §1) and **analyst-revision drift** (Womack 1996) are specific cases of the same under-reaction.
+
+So the **Before the move** page looks for stocks with strong news (score ≥ 2.5) that the price **hasn't reacted to yet**:
+- The stock has moved **less than one "normal day"** with the news since the first headline. A normal day is the 14-day average true range (ATR).
+- Stocks that moved more than half a normal day **against** the news are excluded: the market is disagreeing, and that's information too.
+- Takeover targets are excluded (the price is pinned to the deal price), and so are stocks that are already extended.
+- Ranking favors stronger news, smaller reactions, several independent sources, and the overall market moving the same way.
+
+### Earnings coming up
+- **Earnings-surprise streaks persist** (Loh & Warachka 2012): firms that beat several quarters in a row tend to beat again.
+- **Earnings-announcement premium** (Frazzini & Lamont 2007; Barber, De George, Lehavy & Trueman 2013): stocks earn higher average returns around their scheduled announcements.
+
+The app flags companies reporting in the next week with a **4-for-4 beat streak and an uptrend** (could go up) or **3–4 misses and a downtrend** (could go down). Earnings are still binary events, so these rank below news setups.
+
+### How trade ideas are built
+| Part | Rule | Why |
+|---|---|---|
+| Entry | Current price. Don't chase a gap bigger than one ATR; wait for the first 15-minute range to break instead (the ORB rule from `STRATEGY_KNOWLEDGE.md`). | Gaps often partly fade. |
+| Stop | 1.5× ATR from entry. Ideas whose stop would be more than 12% away are dropped. | A stop inside normal daily noise gets hit by randomness. Your own bot's research found tight stops lose. |
+| Target | 2× the risk (2:1 reward-to-risk). | Profitable with anything over a 33% win rate. |
+| Time frame | Set by the catalyst: earnings/guidance 2–4 weeks, rating changes 1–3 weeks, FDA/trials 3–10 days, pure price momentum 1–3 days. | Matches how long each kind of drift lasts in the studies above. |
+| Size | Risk a fixed % of your account (Settings, default 1%). Shares = (account × risk%) ÷ (entry − stop). | Fixed-fractional sizing keeps one bad trade from doing real damage. |
+
+### Where the "chance" comes from
+The app does **not** invent probabilities. Every trade idea is logged, and once its stop or target is hit (or 20 trading days pass), the result is recorded. A trade idea's win rate is the **measured** rate of past ideas with the same catalyst, or the same type if there aren't enough of those, once at least 15 have played out. Until then it says "building history". Check the Track record page to see whether the ideas are actually working before you trust them with real money.
+
+**Bearish ideas** mean shorting, which needs a margin account and carries unlimited risk. For most people they're better used as "sell or avoid if you own it."
+
+---
+
 ### References
 - Ball, R. & Brown, P. (1968). An empirical evaluation of accounting income numbers. *Journal of Accounting Research.*
 - Bernard, V. & Thomas, J. (1989). Post-earnings-announcement drift: delayed price response or risk premium? *Journal of Accounting Research.*
@@ -193,3 +230,7 @@ When you search one stock, the app also pulls data that is too slow to fetch for
 - Chen, H., De, P., Hu, Y. & Hwang, B.-H. (2014). Wisdom of crowds: the value of stock opinions transmitted through social media. *Review of Financial Studies.*
 - Da, Z., Engelberg, J. & Gao, P. (2011). In search of attention. *Journal of Finance.*
 - Pan, J. & Poteshman, A. (2006). The information in option volume for future stock prices. *Review of Financial Studies.*
+- Hong, H. & Stein, J. (1999). A unified theory of underreaction, momentum trading, and overreaction in asset markets. *Journal of Finance.*
+- Hong, H., Lim, T. & Stein, J. (2000). Bad news travels slowly: size, analyst coverage, and the profitability of momentum strategies. *Journal of Finance.*
+- Frazzini, A. & Lamont, O. (2007). The earnings announcement premium and trading volume. NBER Working Paper.
+- Barber, B., De George, E., Lehavy, R. & Trueman, B. (2013). The earnings announcement premium around the globe. *Journal of Financial Economics.*

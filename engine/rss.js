@@ -38,7 +38,7 @@ function parseFeed(xml) {
       link,
       summary: clean(tag(b, 'description') || tag(b, 'summary')).slice(0, 400),
       publishedAt: date && !isNaN(date) ? date.getTime() : null,
-      source: clean(tag(b, 'source')),
+      source: clean(tag(b, 'source') || tag(b, 'News:Source')),
     });
   }
   return items.filter((i) => i.title);

@@ -1,6 +1,7 @@
 // One full scan: news → tickers → catalysts → price confirmation → ranked lists.
 const { mapLimit } = require('./http');
-const { fetchAllNews } = require('./feeds');
+const { fetchAllNews, fetchFeeds, tickerFeeds, dedupe } = require('./feeds');
+const { buildSetups } = require('./setups');
 const { classify } = require('./catalysts');
 const { loadUniverse, tagTickers } = require('./universe');
 const { history, technicals } = require('./prices');
@@ -31,20 +32,31 @@ async function scan(settings, onProgress = () => {}) {
   progress('Loading stock universe…', 2);
   const u = await loadUniverse();
 
+  const minCap = settings.minMarketCap ?? 5e8;
+  const minPrice = settings.minPrice ?? 3;
+  const include = (sym, info) => watchlist.includes(sym) || ((info.marketCap || 0) >= minCap && (info.price || 0) >= minPrice);
+
+  // Pass 1: the broad sweep (publisher feeds, catalyst searches, watchlist, today's movers).
   progress('Reading news feeds…', 5);
-  const [{ items, status }, econ, earnings] = await Promise.all([
-    fetchAllNews(watchlist, (d, t) => progress(`Reading news feeds (${d}/${t})…`, 5 + (d / t) * 55)),
+  const [first, econ, earnings] = await Promise.all([
+    fetchAllNews(u, { watchlist, minCap }, (d, t) => progress(`Reading news (${d}/${t} sources)…`, 5 + (d / t) * 40)),
     economicCalendar(settings.econCacheFile).catch(() => []),
     earningsCalendar(6).catch(() => []),
   ]);
 
+  // Pass 2: deep dive. Every stock that already looks like a signal gets its own
+  // searches plus its Seeking Alpha and Nasdaq company feeds, to confirm or refute it.
+  const prelim = aggregate(analyzeItems(first.items, u, now), u, now, include)
+    .sort((x, y) => Math.abs(y.newsRaw) - Math.abs(x.newsRaw));
+  const deepSyms = prelim.filter((c) => Math.abs(c.newsRaw) >= 1).slice(0, settings.deepDive ?? 30).map((c) => c.symbol);
+  const second = await fetchFeeds(tickerFeeds(deepSyms, { deep: true }), (d, t) => progress(`Deep dive on ${deepSyms.length} stocks (${d}/${t})…`, 45 + (d / t) * 17));
+  const items = dedupe([...first.items, ...second.items]);
+  const status = [...first.status, ...second.status];
+
   progress('Classifying headlines…', 62);
   const news = analyzeItems(items, u, now);
 
-  const minCap = settings.minMarketCap ?? 5e8;
-  const minPrice = settings.minPrice ?? 3;
-  const candidates = aggregate(news, u, now, (sym, info) =>
-    watchlist.includes(sym) || ((info.marketCap || 0) >= minCap && (info.price || 0) >= minPrice));
+  const candidates = aggregate(news, u, now, include);
   for (const c of candidates) c.onWatch = watchlist.includes(c.symbol);
   // Watchlist stocks always appear, even without news.
   for (const sym of watchlist) {
@@ -63,7 +75,10 @@ async function scan(settings, onProgress = () => {}) {
   const [spy, qqq] = await Promise.all([history('SPY', 'etf').catch(() => null), history('QQQ', 'etf').catch(() => null)]);
   await mapLimit(toPrice, 5, async (c) => {
     try {
-      c.tech = technicals(await history(c.symbol));
+      // Live price from the stock list when it's fresh: saves one request per stock.
+      const info = u.live ? u.bySymbol.get(c.symbol) : null;
+      c._bars = await history(c.symbol, 'stocks', info?.price ? { price: info.price, volume: info.volume } : null);
+      c.tech = technicals(c._bars);
     } catch {
       c.tech = null;
     }
@@ -106,6 +121,9 @@ async function scan(settings, onProgress = () => {}) {
   const bearish = ranked.filter((c) => c.newsScore < -0.5 && c.composite < 0).sort((a, b) => a.composite - b.composite).slice(0, 30);
 
   const regime = marketRegime(technicals(spy), technicals(qqq));
+  progress('Building setups & trade ideas…', 97);
+  const setups = await buildSetups({ candidates, earnings, regime, now, include });
+  for (const c of candidates) delete c._bars;
   const todayHigh = econ.filter((e) => e.impact === 'High' && sameDay(e.time, now));
 
   progress('Done', 100);
@@ -113,9 +131,11 @@ async function scan(settings, onProgress = () => {}) {
     scannedAt: now,
     bullish, bearish,
     watchlist: candidates.filter((c) => c.onWatch).sort((a, b) => b.composite - a.composite),
-    news: news.map(stripPrivate).sort((a, b) => b.publishedAt - a.publishedAt).slice(0, 600),
+    ...setups,
+    news: news.map(stripPrivate).sort((a, b) => b.publishedAt - a.publishedAt).slice(0, 1500),
     econ, earnings, regime, todayHigh,
-    stats: { headlines: news.length, tagged: news.filter((n) => n.tickers.length).length, candidates: candidates.length, priced: toPrice.length, feeds: status },
+    stats: { headlines: news.length, tagged: news.filter((n) => n.tickers.length).length, candidates: candidates.length, priced: toPrice.length,
+      sources: status.length, deepDive: deepSyms.length, movers: first.movers.length, feeds: status },
   };
 }
 
@@ -181,8 +201,16 @@ function aggregate(news, u, now, include = () => true) {
       const cats = n._perTicker[sym] || n._cats;
       if (!cats.length) continue;
       let a = agg.get(sym);
-      if (!a) agg.set(sym, (a = { symbol: sym, info, byCat: new Map(), headlines: [] }));
+      if (!a) agg.set(sym, (a = { symbol: sym, info, byCat: new Map(), headlines: [], firstAt: {} }));
       a.headlines.push(n);
+      // When did news pointing each way first appear? (setups.js measures the reaction since.)
+      if (!n.opinion && !n.lawSpam) {
+        for (const c of cats) {
+          if (c.momentum) continue;
+          const d = c.weight > 0 ? 'up' : 'down';
+          a.firstAt[d] = Math.min(a.firstAt[d] ?? Infinity, n.publishedAt);
+        }
+      }
       for (const c of cats) {
         let w = c.weight * decay(age, c.hl) * srcW * (c.half ? 0.5 : 1) / Math.sqrt(n.tickers.length);
         if (n.lawSpam) w = Math.max(w, -0.3);
@@ -206,7 +234,7 @@ function aggregate(news, u, now, include = () => true) {
     const sources = new Set(a.headlines.filter((h) => !h.opinion && !h.lawSpam).map((h) => h.publisher.toLowerCase()));
     out.push({
       symbol: a.symbol, name: a.info.name, sector: a.info.sector, industry: a.info.industry, marketCap: a.info.marketCap,
-      newsRaw: raw, newsScore: 10 * Math.tanh(raw / 6), reasons, independentSources: sources.size,
+      newsRaw: raw, newsScore: 10 * Math.tanh(raw / 6), reasons, independentSources: sources.size, firstAt: a.firstAt,
       headlines: a.headlines.sort((x, y) => y.publishedAt - x.publishedAt).slice(0, 15).map(stripPrivate),
     });
   }
