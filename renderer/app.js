@@ -283,8 +283,10 @@ function showView(name) {
   $$('.view').forEach((v) => v.classList.toggle('hidden', v.id !== `view-${name}`));
   if (name === 'track') renderTrack();
   if (name === 'paper') {
-    if (!pt.chart) ptSetSymbol(pt.sym);
-    else radar.paper.watch([pt.sym]).then(applyPaper);
+    if (!pt.panes.length) {
+      pt.layout = String(store.get('pt.layout', '1'));
+      buildPanes();
+    } else watchPanes();
   } else if (window.radar) radar.paper.watch([]);
 }
 $('#nav').addEventListener('click', (e) => {
@@ -623,17 +625,31 @@ radar.getSettings().then((s) => { settingsCache = s; if (data) renderTrades(); }
 
 // ---------- paper trading ----------
 const LWC = window.LightweightCharts;
-const pt = { sym: 'SPY', tf: '5m', side: 'buy', chart: null, candle: null, vol: null, lines: [], bars: [], acct: null, quotes: {}, tab: 'pos', eqChart: null, eqLine: null, loading: 0 };
+const pt = { side: 'buy', acct: null, quotes: {}, tab: 'pos', eqChart: null, eqLine: null, panes: [], active: 0, layout: '1' };
 const TF_SEC = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600 };
+const LAYOUT_PANES = { 1: 1, 2: 2, '2v': 2, 4: 4 };
+const DEFAULT_SYMS = ['SPY', 'QQQ', 'NVDA', 'AAPL'];
 
 function cssVar(n) {
   return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 }
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
 
-function ensureChart() {
-  if (pt.chart || !LWC) return;
-  const el = $('#ptChart');
-  pt.chart = LWC.createChart(el, {
+// The active pane is the one the order ticket trades.
+const activePane = () => pt.panes[pt.active] || pt.panes[0];
+Object.defineProperty(pt, 'sym', { get: () => activePane()?.sym || 'SPY' });
+
+// One chart pane: its own symbol, timeframe, candles, volume and price lines.
+function makePane(i, sym, tf) {
+  const el = document.createElement('div');
+  el.className = 'pt-pane';
+  el.innerHTML = `<div class="pane-head"></div><div class="pane-chart"></div><div class="pane-msg hidden"></div>`;
+  $('#ptGrid').appendChild(el);
+  const p = { i, el, sym, tf, bars: [], lines: [], loading: 0 };
+  p.chart = LWC.createChart($('.pane-chart', el), {
     autoSize: true,
     layout: { background: { color: 'transparent' }, textColor: cssVar('--muted'), fontSize: 11 },
     grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
@@ -641,37 +657,136 @@ function ensureChart() {
     rightPriceScale: { borderColor: cssVar('--line') },
     crosshair: { mode: LWC.CrosshairMode.Normal },
   });
-  pt.candle = pt.chart.addCandlestickSeries({
+  p.candle = p.chart.addCandlestickSeries({
     upColor: cssVar('--up'), downColor: cssVar('--down'), borderVisible: false, wickUpColor: cssVar('--up'), wickDownColor: cssVar('--down'),
   });
-  pt.vol = pt.chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '', color: 'rgba(120,140,160,0.35)' });
-  pt.vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-  // Click the chart to set the limit/stop price.
-  pt.chart.subscribeClick((p) => {
-    if (!p.point) return;
-    const price = pt.candle.coordinateToPrice(p.point.y);
+  p.vol = p.chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '', color: 'rgba(120,140,160,0.35)' });
+  p.vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  // First click activates the pane; clicking the active pane sets the limit/stop price.
+  el.addEventListener('mousedown', () => {
+    if (pt.active !== p.i) setActive(p.i);
+  }, true);
+  p.chart.subscribeClick((param) => {
+    if (pt.active !== p.i || !param.point || p.justActivated) return;
+    const price = p.candle.coordinateToPrice(param.point.y);
     if (price == null) return;
     if ($('#ptType').value === 'market') $('#ptType').value = 'limit';
     $('#ptPrice').value = price.toFixed(2);
     syncTicket();
   });
+  return p;
 }
 
-async function loadCandles() {
-  ensureChart();
-  const seq = ++pt.loading;
-  try {
-    const { bars } = await radar.paper.candles(pt.sym, pt.tf);
-    if (seq !== pt.loading) return;
-    pt.bars = bars;
-    pt.candle.setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
-    pt.vol.setData(bars.map((b) => ({ time: b.time, value: b.volume, color: b.close >= b.open ? 'rgba(34,197,94,0.3)' : 'rgba(240,82,82,0.3)' })));
-    pt.chart.timeScale().fitContent();
-    if (bars.length > 150 && TF_SEC[pt.tf]) pt.chart.timeScale().setVisibleLogicalRange({ from: bars.length - 150, to: bars.length + 5 });
-    drawLines();
-  } catch (e) {
-    $('#ptMsg').innerHTML = `<span class="msg-err">Chart data unavailable for ${esc(pt.sym)}.</span>`;
+function buildPanes() {
+  if (!LWC) return;
+  for (const p of pt.panes) p.chart.remove();
+  $('#ptGrid').innerHTML = '';
+  $('#ptGrid').className = `pt-grid l${pt.layout}`;
+  const saved = store.get('pt.panes', []);
+  pt.panes = [];
+  for (let i = 0; i < LAYOUT_PANES[pt.layout]; i++) {
+    const used = pt.panes.map((x) => x.sym);
+    const cfg = saved[i] || { sym: DEFAULT_SYMS.find((d) => !used.includes(d)) || 'SPY', tf: '5m' };
+    pt.panes.push(makePane(i, cfg.sym, cfg.tf));
   }
+  if (pt.active >= pt.panes.length) pt.active = 0;
+  $$('#ptLayout button').forEach((b) => b.classList.toggle('on', b.dataset.l === pt.layout));
+  setActive(pt.active, { quiet: true });
+  for (const p of pt.panes) loadCandles(p);
+  watchPanes();
+}
+
+function savePanes() {
+  const saved = store.get('pt.panes', []);
+  pt.panes.forEach((p, i) => (saved[i] = { sym: p.sym, tf: p.tf }));
+  store.set('pt.panes', saved);
+  store.set('pt.layout', pt.layout);
+}
+
+function setActive(i, { quiet = false } = {}) {
+  const prev = pt.active;
+  pt.active = i;
+  pt.panes.forEach((p) => p.el.classList.toggle('active', p.i === i));
+  const p = activePane();
+  if (!p) return;
+  $('#ptSym').value = p.sym;
+  $$('#ptTf button').forEach((x) => x.classList.toggle('on', x.dataset.tf === p.tf));
+  // Swallow the click that activated the pane so it doesn't also set a price.
+  if (!quiet && prev !== i) {
+    p.justActivated = true;
+    setTimeout(() => (p.justActivated = false), 300);
+    clearTicketLevels();
+  }
+  renderQuoteHead();
+  drawAllLines();
+  syncTicket();
+}
+
+function watchPanes() {
+  return radar.paper.watch([...new Set(pt.panes.map((p) => p.sym))]).then(applyPaper);
+}
+
+async function loadCandles(p) {
+  const seq = ++p.loading;
+  // Clear the old symbol's candles and lines right away so nothing stale is shown.
+  p.bars = [];
+  p.candle.setData([]);
+  p.vol.setData([]);
+  drawLines(p);
+  paneMsg(p, `Loading ${p.sym}…`);
+  renderPaneHead(p);
+  try {
+    const { bars } = await radar.paper.candles(p.sym, p.tf);
+    if (seq !== p.loading) return; // a newer symbol/timeframe was picked meanwhile
+    if (!bars.length) return paneMsg(p, `No chart data for ${p.sym}`);
+    p.bars = bars;
+    p.candle.setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+    p.vol.setData(bars.map((b) => ({ time: b.time, value: b.volume, color: b.close >= b.open ? 'rgba(34,197,94,0.3)' : 'rgba(240,82,82,0.3)' })));
+    p.candle.priceScale().applyOptions({ autoScale: true });
+    p.chart.timeScale().fitContent();
+    if (bars.length > 150 && TF_SEC[p.tf]) p.chart.timeScale().setVisibleLogicalRange({ from: bars.length - 150, to: bars.length + 5 });
+    paneMsg(p, '');
+    drawLines(p);
+  } catch {
+    if (seq === p.loading) paneMsg(p, `Chart data unavailable for ${p.sym}`);
+  }
+}
+
+function paneMsg(p, text) {
+  const m = $('.pane-msg', p.el);
+  m.textContent = text;
+  m.classList.toggle('hidden', !text);
+}
+
+function renderPaneHead(p) {
+  const q = pt.quotes[p.sym];
+  $('.pane-head', p.el).innerHTML = `<b>${esc(p.sym)}</b><span class="muted">${esc(p.tf)}</span>${q ? `<span>${money(q.last)}</span><span class="${cls(q.changePct)}">${pct(q.changePct, 2)}</span>` : ''}`;
+}
+
+// Changing symbol: new candles, and the ticket's stop/target/limit (which belonged to the
+// old stock) are cleared so they can't be drawn on — or sent for — the wrong chart.
+async function setPaneSymbol(p, sym) {
+  sym = String(sym || '').toUpperCase().trim();
+  if (!sym || !p) return;
+  const changed = sym !== p.sym;
+  p.sym = sym;
+  savePanes();
+  if (p.i === pt.active) {
+    $('#ptSym').value = sym;
+    if (changed) clearTicketLevels();
+  }
+  loadCandles(p);
+  await watchPanes();
+}
+
+function clearTicketLevels() {
+  $('#ptPrice').value = '';
+  $('#ptSL').value = '';
+  $('#ptTP').value = '';
+  $('#ptUseSL').checked = false;
+  $('#ptUseTP').checked = false;
+  if ($('#ptType').value !== 'market') $('#ptType').value = 'market';
+  pt.note = '';
 }
 
 // New York clock written as UTC seconds (matches the candle timestamps).
@@ -680,19 +795,21 @@ function nowEtAsUtc() {
   return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()) / 1000;
 }
 
-// Stream the live price into the last candle.
-function liveCandle(q) {
-  if (!pt.candle || !pt.bars.length || !q) return;
+// Stream the live price into a pane's last candle.
+function liveCandle(p) {
+  const q = pt.quotes[p.sym];
+  if (!p.bars.length || !q) return;
   const price = pt.acct?.marketOpen ? q.last : q.ext?.last || q.last;
-  const last = pt.bars.at(-1);
-  const span = TF_SEC[pt.tf];
+  const last = p.bars.at(-1);
+  const span = TF_SEC[p.tf];
   if (span) {
-    const bucket = nowEtAsUtc() - (nowEtAsUtc() % span);
+    const now = nowEtAsUtc();
+    const bucket = now - (now % span);
     if (bucket > last.time) {
       if (!pt.acct?.marketOpen && !q.ext) return; // nothing trading right now
       const b = { time: bucket, open: last.close, high: Math.max(last.close, price), low: Math.min(last.close, price), close: price, volume: 0 };
-      pt.bars.push(b);
-      pt.candle.update(b);
+      p.bars.push(b);
+      p.candle.update(b);
       return;
     }
   }
@@ -700,33 +817,37 @@ function liveCandle(q) {
   last.close = price;
   last.high = Math.max(last.high, price);
   last.low = Math.min(last.low, price);
-  pt.candle.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: last.close });
+  p.candle.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: last.close });
 }
 
-function drawLines() {
-  if (!pt.candle) return;
-  for (const l of pt.lines) pt.candle.removePriceLine(l);
-  pt.lines = [];
+// Price lines for one pane: only that pane's own symbol, never another stock's.
+function drawLines(p) {
+  for (const l of p.lines) p.candle.removePriceLine(l);
+  p.lines = [];
   const a = pt.acct;
-  if (!a) return;
-  const add = (price, color, title, style = 2) => price && pt.lines.push(pt.candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
-  const pos = a.positions.find((p) => p.symbol === pt.sym);
+  if (!a || !p.bars.length) return;
+  const add = (price, color, title, style = 2) => price && p.lines.push(p.candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
+  const pos = a.positions.find((x) => x.symbol === p.sym);
   if (pos) add(pos.avg, cssVar('--accent'), `${pos.qty > 0 ? 'Long' : 'Short'} ${Math.abs(pos.qty)} @ avg`, 0);
-  for (const o of a.orders.filter((o) => o.symbol === pt.sym)) {
+  for (const o of a.orders.filter((o) => o.symbol === p.sym)) {
     const color = o.role === 'stop' ? cssVar('--down') : o.role === 'target' ? cssVar('--up') : cssVar('--warn');
     const title = o.role === 'stop' ? 'Stop-loss' : o.role === 'target' ? 'Take-profit' : `${o.side === 'buy' ? 'Buy' : 'Sell'} ${o.type} ${o.qty}`;
     if (o.price) add(o.price, color, title);
   }
-  // Preview the ticket's stop-loss / take-profit before the order is placed.
-  if ($('#ptUseSL').checked && +$('#ptSL').value) add(+$('#ptSL').value, 'rgba(240,82,82,0.5)', 'SL (preview)', 3);
-  if ($('#ptUseTP').checked && +$('#ptTP').value) add(+$('#ptTP').value, 'rgba(34,197,94,0.5)', 'TP (preview)', 3);
+  // The ticket's preview lines go on the active pane only.
+  if (p.i === pt.active) {
+    if ($('#ptUseSL').checked && +$('#ptSL').value) add(+$('#ptSL').value, 'rgba(240,82,82,0.5)', 'SL (preview)', 3);
+    if ($('#ptUseTP').checked && +$('#ptTP').value) add(+$('#ptTP').value, 'rgba(34,197,94,0.5)', 'TP (preview)', 3);
+    if ($('#ptType').value !== 'market' && +$('#ptPrice').value) add(+$('#ptPrice').value, 'rgba(245,165,36,0.6)', `${$('#ptType').value} (preview)`, 3);
+  }
 }
+const drawAllLines = () => pt.panes.forEach(drawLines);
 
 function renderQuoteHead() {
   const q = pt.quotes[pt.sym];
   if (!q) return ($('#ptQuote').innerHTML = `<span class="muted">Loading ${esc(pt.sym)}…</span>`);
   $('#ptQuote').innerHTML = `<span class="muted">${esc(q.name || '')}</span><b>${money(q.last)}</b><span class="${cls(q.changePct)}">${pct(q.changePct, 2)}</span>
-    ${q.ext ? `<span class="muted small">${q.ext.type === 'PRE_MKT' ? 'Pre-market' : 'After hours'} <b class="${cls(q.ext.changePct)}" style="font-size:13px">${money(q.ext.last)}</b></span>` : ''}`;
+    ${q.ext && !pt.acct?.marketOpen ? `<span class="muted small">${q.ext.type === 'PRE_MKT' ? 'Pre-market' : 'After hours'} <b class="${cls(q.ext.changePct)}" style="font-size:13px">${money(q.ext.last)}</b></span>` : ''}`;
 }
 
 function renderAcct() {
@@ -810,17 +931,7 @@ function syncTicket() {
     if (pt.acct) est += `<br>Buying power: $${pt.acct.buyingPower.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   }
   $('#ptEst').innerHTML = est || 'Enter shares to see the order value and risk.';
-  drawLines();
-}
-
-async function ptSetSymbol(sym) {
-  sym = String(sym || '').toUpperCase().trim();
-  if (!sym) return;
-  pt.sym = sym;
-  $('#ptSym').value = sym;
-  const d = await radar.paper.watch([sym]);
-  applyPaper(d);
-  loadCandles();
+  drawAllLines();
 }
 
 function applyPaper(d) {
@@ -831,8 +942,11 @@ function applyPaper(d) {
     renderAcct();
     renderQuoteHead();
     renderTabs();
-    liveCandle(pt.quotes[pt.sym]);
-    drawLines();
+    for (const p of pt.panes) {
+      liveCandle(p);
+      renderPaneHead(p);
+    }
+    drawAllLines();
     syncTicket();
   }
 }
@@ -850,17 +964,36 @@ function openPaper(prefill = {}) {
   $('#ptTP').value = prefill.takeProfit ? prefill.takeProfit.toFixed(2) : '';
   pt.note = prefill.note || '';
   $('#ptMsg').innerHTML = prefill.note ? `<span class="muted">Loaded from Trade ideas: ${esc(prefill.note)}. Check the levels, then place the order.</span>` : '';
-  ptSetSymbol(prefill.symbol || pt.sym);
+  // Load the stock into the active chart without wiping the levels just filled in.
+  const p = activePane();
+  if (p && prefill.symbol && prefill.symbol !== p.sym) {
+    p.sym = prefill.symbol;
+    savePanes();
+    $('#ptSym').value = p.sym;
+    loadCandles(p);
+    watchPanes();
+  }
+  syncTicket();
 }
 
-$('#ptSym').addEventListener('keydown', (e) => e.key === 'Enter' && ptSetSymbol(e.target.value));
-$('#ptSym').addEventListener('change', (e) => ptSetSymbol(e.target.value));
+$('#ptSym').addEventListener('keydown', (e) => e.key === 'Enter' && setPaneSymbol(activePane(), e.target.value));
+$('#ptSym').addEventListener('change', (e) => setPaneSymbol(activePane(), e.target.value));
 $('#ptTf').addEventListener('click', (e) => {
   const b = e.target.closest('button');
-  if (!b) return;
-  pt.tf = b.dataset.tf;
+  const p = activePane();
+  if (!b || !p) return;
+  p.tf = b.dataset.tf;
+  savePanes();
   $$('#ptTf button').forEach((x) => x.classList.toggle('on', x === b));
-  loadCandles();
+  loadCandles(p);
+});
+$('#ptLayout').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b || b.dataset.l === pt.layout) return;
+  savePanes();
+  pt.layout = b.dataset.l;
+  store.set('pt.layout', pt.layout);
+  buildPanes();
 });
 $('#ptTabs').addEventListener('click', (e) => {
   const b = e.target.closest('button');
@@ -917,7 +1050,7 @@ document.addEventListener('click', async (e) => {
       openPaper({ symbol: t.symbol, side: t.dir === 'up' ? 'buy' : 'sell', qty: shares, type: 'market', stopLoss: t.stop, takeProfit: t.target, note: `${t.catalyst} (${t.horizon})` });
       return;
     }
-    if (s) ptSetSymbol(s.dataset.ptsym);
+    if (s) setPaneSymbol(activePane(), s.dataset.ptsym);
   } catch (err) {
     $('#ptMsg').innerHTML = `<span class="msg-err">${esc(String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))}</span>`;
   }

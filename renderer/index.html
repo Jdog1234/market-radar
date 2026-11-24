@@ -123,13 +123,17 @@
           <div class="pt-head">
             <input id="ptSym" type="search" placeholder="Symbol" autocomplete="off" spellcheck="false" />
             <div id="ptQuote" class="pt-quote"></div>
+            <div class="chips pt-layout" id="ptLayout" title="Chart layout">
+              <button data-l="1" class="on" title="One chart">▢</button><button data-l="2" title="Two side by side">◫</button>
+              <button data-l="2v" title="Two stacked">⬒</button><button data-l="4" title="Four charts">⊞</button>
+            </div>
             <div class="chips pt-tf" id="ptTf">
               <button data-tf="1m">1m</button><button data-tf="5m" class="on">5m</button><button data-tf="15m">15m</button>
               <button data-tf="1h">1h</button><button data-tf="D">1D</button><button data-tf="W">1W</button>
             </div>
           </div>
-          <div id="ptChart" class="pt-chart"></div>
-          <div class="muted small pt-attr">Charts by <a data-url="https://www.tradingview.com/">TradingView</a> Lightweight Charts. Times are New York (ET). Click the chart to set a limit/stop price.</div>
+          <div id="ptGrid" class="pt-grid l1"></div>
+          <div class="muted small pt-attr">Charts by <a data-url="https://www.tradingview.com/">TradingView</a> Lightweight Charts. Times are New York (ET). Click a chart to make it active (the ticket trades it), and click again to set a limit/stop price.</div>
         </div>
         <div class="card pt-ticket">
           <div class="pt-side"><button data-side="buy" class="on buy">Buy</button><button data-side="sell" class="sell">Sell / Short</button></div>

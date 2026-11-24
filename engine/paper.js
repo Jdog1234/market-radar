@@ -33,6 +33,27 @@ class PaperAccount {
     }
     if (!this.s) this.reset(startCash);
     this.last = {}; // symbol → last price seen
+    this.loadedAt = this.mtime();
+  }
+
+  mtime() {
+    try {
+      return fs.statSync(this.file).mtimeMs;
+    } catch {
+      return 0;
+    }
+  }
+
+  // If another copy of the app changed the account file, pick up its version first so
+  // neither window overwrites the other's trades.
+  sync() {
+    const m = this.mtime();
+    if (m && m > this.loadedAt + 1) {
+      try {
+        this.s = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      } catch {}
+      this.loadedAt = m;
+    }
   }
 
   reset(startCash = 10000) {
@@ -42,6 +63,7 @@ class PaperAccount {
 
   save() {
     fs.writeFileSync(this.file, JSON.stringify(this.s));
+    this.loadedAt = this.mtime();
   }
 
   // ---- account math ----
@@ -63,6 +85,7 @@ class PaperAccount {
   }
 
   summary() {
+    this.sync();
     const equity = this.equity();
     const positions = Object.entries(this.s.positions).map(([sym, p]) => {
       const last = this.price(sym);
@@ -88,6 +111,7 @@ class PaperAccount {
 
   // ---- orders ----
   place({ symbol, side, qty, type = 'market', price = null, stopLoss = null, takeProfit = null, note = '' }) {
+    this.sync();
     symbol = String(symbol || '').toUpperCase().trim();
     qty = Math.floor(Number(qty));
     if (!symbol) throw new Error('Pick a symbol');
@@ -117,6 +141,7 @@ class PaperAccount {
   }
 
   cancel(id) {
+    this.sync();
     const o = this.s.orders.find((x) => x.id === id && x.status === 'working');
     if (!o) throw new Error('Order not found or already done');
     o.status = 'cancelled';
@@ -126,6 +151,7 @@ class PaperAccount {
 
   // Close a position at market (cancels its stop/target orders).
   close(symbol) {
+    this.sync();
     const p = this.s.positions[symbol];
     if (!p) throw new Error('No open position');
     for (const o of this.s.orders) if (o.symbol === symbol && o.status === 'working' && o.role !== 'entry') Object.assign(o, { status: 'cancelled', doneAt: Date.now() });
@@ -134,6 +160,7 @@ class PaperAccount {
 
   // Move a position's protective orders.
   modifyBracket(symbol, { stopLoss, takeProfit }) {
+    this.sync();
     for (const o of this.s.orders) {
       if (o.symbol !== symbol || o.status !== 'working') continue;
       if (o.role === 'stop' && stopLoss) o.price = Number(stopLoss);
@@ -145,6 +172,7 @@ class PaperAccount {
   // ---- matching ----
   // quotes: symbol → { last }. Returns true if anything filled.
   tick(quotes) {
+    this.sync();
     for (const [sym, q] of Object.entries(quotes)) if (q?.last) this.last[sym] = q.last;
     const open = marketOpen();
     let changed = false;
