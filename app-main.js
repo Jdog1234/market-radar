@@ -1,6 +1,6 @@
 // The app itself. Loaded by the launcher (main.js) either from the installed copy or
 // from a newer downloaded update — so everything here can change through auto-update.
-const { app, BrowserWindow, ipcMain, shell, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Notification, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { scan } = require('./engine/scanner');
@@ -9,6 +9,9 @@ const tracker = require('./engine/tracker');
 const { setCacheDir } = require('./engine/universe');
 const { PaperAccount, marketOpen } = require('./engine/paper');
 const { quotes, candles } = require('./engine/quotes');
+const { setDataConfig } = require('./engine/config');
+const polygon = require('./engine/polygon');
+const { Account } = require('./engine/account');
 
 const DEFAULTS = {
   watchlist: ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'AMD', 'GOOGL'],
@@ -18,6 +21,26 @@ const DEFAULTS = {
   notify: true,
   accountSize: 10000,
   riskPct: 1,
+  licensedOnly: false,
+  polygonKeyEnc: '', // encrypted with the OS keychain (safeStorage); never stored in plain text
+};
+
+// API keys are encrypted with the operating system's secure storage before saving.
+function readKey(enc) {
+  if (!enc) return '';
+  try {
+    return safeStorage.decryptString(Buffer.from(enc, 'base64'));
+  } catch {
+    return '';
+  }
+}
+function applyDataConfig() {
+  setDataConfig({ polygonKey: readKey(settings.polygonKeyEnc), licensedOnly: !!settings.licensedOnly });
+}
+// What the renderer may see about settings: never the key itself.
+const publicSettings = () => {
+  const { polygonKeyEnc, ...rest } = settings;
+  return { ...rest, polygonConfigured: !!polygonKeyEnc };
 };
 
 const dataDir = () => app.getPath('userData');
@@ -40,6 +63,7 @@ let scanning = false;
 let timer = null;
 let trackCache = { at: 0, data: null };
 let paper;
+let account;
 let paperWatch = []; // symbols the paper-trading screen is showing
 let lastQuotes = {};
 
@@ -156,13 +180,24 @@ function schedule() {
 
 function start(launcher) {
   setCacheDir(dataDir());
-  ipcMain.handle('settings:get', () => settings);
+  ipcMain.handle('settings:get', () => publicSettings());
   ipcMain.handle('settings:set', (_e, next) => {
-    settings = { ...settings, ...next };
+    const { polygonKeyEnc, polygonConfigured, ...allowed } = next || {};
+    settings = { ...settings, ...allowed };
     fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
+    applyDataConfig();
     schedule();
-    return settings;
+    return publicSettings();
   });
+  ipcMain.handle('data:setPolygonKey', (_e, key) => {
+    key = String(key || '').trim();
+    if (key && !safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this computer, so the key was not saved');
+    settings.polygonKeyEnc = key ? safeStorage.encryptString(key).toString('base64') : '';
+    fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
+    applyDataConfig();
+    return publicSettings();
+  });
+  ipcMain.handle('data:testPolygon', () => (polygon.enabled() ? polygon.test() : { errors: ['No Polygon key saved yet'] }));
   ipcMain.handle('scan:last', () => lastScan);
   ipcMain.handle('scan:run', () => runScan());
   ipcMain.handle('stock:search', (_e, q) => search(q));
@@ -189,16 +224,26 @@ function start(launcher) {
   ipcMain.handle('paper:modify', (_e, id, price) => paperDo(() => paper.modify(id, price)));
   ipcMain.handle('paper:bracket', (_e, sym, b) => paperDo(() => paper.modifyBracket(sym, b)));
   ipcMain.handle('paper:reset', (_e, cash) => paperDo(() => paper.reset(Number(cash) || settings.accountSize || 10000)));
+  ipcMain.handle('account:status', () => account.status());
+  ipcMain.handle('account:signin', (_e, email, password) => account.auth('signin', String(email || '').trim(), String(password || '')));
+  ipcMain.handle('account:signup', (_e, email, password) => account.auth('signup', String(email || '').trim(), String(password || '')));
+  ipcMain.handle('account:refresh', () => account.refreshPlan());
+  ipcMain.handle('account:signout', () => account.signOut());
+  ipcMain.handle('account:upgrade', async (_e, interval) => shell.openExternal(await account.checkoutUrl(interval === 'year' ? 'year' : 'month')));
+  ipcMain.handle('account:billing', async () => shell.openExternal(await account.portalUrl()));
   ipcMain.handle('guide:get', () => fs.readFileSync(path.join(__dirname, 'RESEARCH.md'), 'utf8'));
   ipcMain.handle('open:external', (_e, url) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
   });
 
   settings = { ...DEFAULTS, ...readJson(settingsFile(), {}) };
+  applyDataConfig();
   lastScan = readJson(lastScanFile(), null);
   for (const c of [...(lastScan?.bullish || []), ...(lastScan?.bearish || []), ...(lastScan?.watchlist || [])]) {
     if (c.confidence === 'High' || (c.onWatch && Math.abs(c.newsScore) >= 3)) notified.add(`${c.symbol}:${Math.sign(c.composite)}`);
   }
+  account = new Account(path.join(dataDir(), 'account.bin'), safeStorage);
+  account.refreshPlan().catch(() => {});
   paper = new PaperAccount(path.join(dataDir(), 'paper-account.json'), settings.accountSize || 10000);
   createWindow(launcher);
   schedule();

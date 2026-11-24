@@ -1,13 +1,22 @@
 // Live quotes and chart candles for paper trading (CNBC's public quote and chart APIs).
 const { get } = require('./http');
 const { num } = require('./universe');
+const { config } = require('./config');
+const polygon = require('./polygon');
 
 const QUOTE = (syms) => `https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${encodeURIComponent(syms.join('|'))}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json`;
 
 // Live quotes for up to ~50 symbols per request. Includes pre/after-market prices.
 async function quotes(symbols) {
-  const out = {};
   const list = [...new Set(symbols.filter(Boolean))];
+  if (polygon.enabled()) {
+    try {
+      const q = await polygon.snapshot(list);
+      if (Object.keys(q).length) return q;
+    } catch {}
+  }
+  if (config.licensedOnly) return {};
+  const out = {};
   for (let i = 0; i < list.length; i += 50) {
     const d = await get(QUOTE(list.slice(i, i + 50)), { json: true, timeoutMs: 8000 });
     for (const q of d?.FormattedQuoteResult?.FormattedQuote || []) {
@@ -41,7 +50,21 @@ function etAsUtc(tradeTime) {
   return Date.UTC(+t.slice(0, 4), +t.slice(4, 6) - 1, +t.slice(6, 8), +t.slice(8, 10) || 0, +t.slice(10, 12) || 0) / 1000;
 }
 
+// Epoch ms → New York clock written as UTC seconds.
+function msToEtAsUtc(ms) {
+  const d = new Date(new Date(ms).toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()) / 1000;
+}
+
 async function candles(symbol, tf = '5m') {
+  if (polygon.enabled()) {
+    try {
+      const bars = await polygon.candles(symbol, tf, msToEtAsUtc);
+      return { symbol, tf, intraday: !['D', 'W'].includes(tf), bars: bars.filter((b, i) => i === 0 || b.time > bars[i - 1].time) };
+    } catch (e) {
+      if (config.licensedOnly) throw e;
+    }
+  }
   const cfg = TF[tf] || TF['5m'];
   const intraday = cfg.range === '1D' || cfg.range === '5D';
   const d = await get(`https://ts-api.cnbc.com/harmony/app/charts/${cfg.range}.json?symbol=${encodeURIComponent(symbol)}`, {

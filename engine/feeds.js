@@ -9,6 +9,8 @@
 const { get, mapLimit } = require('./http');
 const { parseFeed } = require('./rss');
 const { num } = require('./universe');
+const { config } = require('./config');
+const polygon = require('./polygon');
 
 const gnews = (q) => `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
 const bing = (q) => `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&qft=interval%3d%227%22`;
@@ -155,17 +157,49 @@ function dedupe(items) {
     const key = it.title.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').slice(0, 90);
     const prev = seen.get(key);
     if (!prev) seen.set(key, it);
-    else if (it.forTicker && !prev.forTicker) prev.forTicker = it.forTicker;
+    else {
+      if (it.forTicker && !prev.forTicker) prev.forTicker = it.forTicker;
+      if (it.tickersHint?.length && !prev.tickersHint?.length) prev.tickersHint = it.tickersHint;
+    }
   }
   return [...seen.values()];
 }
 
-async function fetchAllNews(u, { watchlist = [], minCap = 5e8 } = {}, onProgress = () => {}) {
-  const moving = await movers(u, minCap).catch(() => []);
-  const perStock = [...new Set([...watchlist.slice(0, 40), ...moving.slice(0, 30)])];
-  const feeds = [...MARKET_FEEDS, ...searchFeeds(), ...tickerFeeds(perStock)];
-  const { items, status } = await fetchFeeds(feeds, onProgress);
-  return { items: dedupe(items), status, covered: new Set(perStock), movers: moving };
+// Licensed news from Polygon: the market-wide stream plus each per-stock request.
+async function polygonNews(symbols = []) {
+  const status = [];
+  const lists = await mapLimit([null, ...symbols], 4, async (t) => {
+    try {
+      const items = await polygon.news({ ticker: t, limit: t ? 50 : 1000 });
+      status.push({ name: `Polygon News${t ? `: ${t}` : ''}`, ok: true, count: items.length });
+      return items;
+    } catch (e) {
+      status.push({ name: `Polygon News${t ? `: ${t}` : ''}`, ok: false, error: String(e.message || e) });
+      return [];
+    }
+  });
+  return { items: lists.flat().filter(Boolean), status };
 }
 
-module.exports = { fetchAllNews, fetchFeeds, tickerFeeds, dedupe };
+async function fetchAllNews(u, { watchlist = [], minCap = 5e8 } = {}, onProgress = () => {}) {
+  const moving = config.licensedOnly ? [] : await movers(u, minCap).catch(() => []);
+  const perStock = [...new Set([...watchlist.slice(0, 40), ...moving.slice(0, 30)])];
+  const licensed = polygon.enabled() ? await polygonNews(watchlist.slice(0, 40)) : { items: [], status: [] };
+  if (config.licensedOnly) {
+    onProgress(1, 1);
+    return { items: dedupe(licensed.items), status: licensed.status, covered: new Set(perStock), movers: moving };
+  }
+  const feeds = [...MARKET_FEEDS, ...searchFeeds(), ...tickerFeeds(perStock)];
+  const { items, status } = await fetchFeeds(feeds, onProgress);
+  return { items: dedupe([...licensed.items, ...items]), status: [...licensed.status, ...status], covered: new Set(perStock), movers: moving };
+}
+
+// Deep-dive pass for candidate stocks: licensed per-stock news, plus the free per-stock feeds.
+async function deepDive(symbols, onProgress = () => {}) {
+  const licensed = polygon.enabled() ? await polygonNews(symbols) : { items: [], status: [] };
+  if (config.licensedOnly) return licensed;
+  const free = await fetchFeeds(tickerFeeds(symbols, { deep: true }), onProgress);
+  return { items: [...licensed.items, ...free.items], status: [...licensed.status, ...free.status] };
+}
+
+module.exports = { fetchAllNews, deepDive, fetchFeeds, tickerFeeds, dedupe };

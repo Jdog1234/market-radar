@@ -20,7 +20,7 @@ const asar = require('@electron/asar');
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const REPO = 'Jdog1234/market-radar';
-const CODE_FILES = ['app-main.js', 'preload.js', 'engine', 'renderer', 'RESEARCH.md', 'package.json'];
+const CODE_FILES = ['app-main.js', 'preload.js', 'engine', 'renderer', 'RESEARCH.md', 'package.json', 'cloud.json'];
 
 const args = process.argv.slice(2);
 const flag = (f) => args.includes(f);

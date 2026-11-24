@@ -1,7 +1,8 @@
 // One full scan: news → tickers → catalysts → price confirmation → ranked lists.
 const { mapLimit } = require('./http');
-const { fetchAllNews, fetchFeeds, tickerFeeds, dedupe } = require('./feeds');
+const { fetchAllNews, deepDive, dedupe } = require('./feeds');
 const { buildSetups } = require('./setups');
+const { quotes } = require('./quotes');
 const { classify } = require('./catalysts');
 const { loadUniverse, tagTickers } = require('./universe');
 const { history, technicals } = require('./prices');
@@ -49,7 +50,7 @@ async function scan(settings, onProgress = () => {}) {
   const prelim = aggregate(analyzeItems(first.items, u, now), u, now, include)
     .sort((x, y) => Math.abs(y.newsRaw) - Math.abs(x.newsRaw));
   const deepSyms = prelim.filter((c) => Math.abs(c.newsRaw) >= 1).slice(0, settings.deepDive ?? 30).map((c) => c.symbol);
-  const second = await fetchFeeds(tickerFeeds(deepSyms, { deep: true }), (d, t) => progress(`Deep dive on ${deepSyms.length} stocks (${d}/${t})…`, 45 + (d / t) * 17));
+  const second = await deepDive(deepSyms, (d, t) => progress(`Deep dive on ${deepSyms.length} stocks (${d}/${t})…`, 45 + (d / t) * 17));
   const items = dedupe([...first.items, ...second.items]);
   const status = [...first.status, ...second.status];
 
@@ -73,11 +74,14 @@ async function scan(settings, onProgress = () => {}) {
   let pDone = 0;
   progress('Checking price & volume…', 65);
   const [spy, qqq] = await Promise.all([history('SPY', 'etf').catch(() => null), history('QQQ', 'etf').catch(() => null)]);
+  // The stock list's prices can lag (Nasdaq's is the prior close intraday), so fetch
+  // real-time quotes for everything being priced in a few batched requests.
+  const live = await quotes(toPrice.map((c) => c.symbol)).catch(() => ({}));
   await mapLimit(toPrice, 5, async (c) => {
     try {
-      // Live price from the stock list when it's fresh: saves one request per stock.
-      const info = u.live ? u.bySymbol.get(c.symbol) : null;
-      c._bars = await history(c.symbol, 'stocks', info?.price ? { price: info.price, volume: info.volume } : null);
+      // Today's bar from the batch of real-time quotes fetched above (one request per 50 stocks).
+      const q = live[c.symbol];
+      c._bars = await history(c.symbol, 'stocks', q?.last ? { price: q.last, volume: q.volume } : null);
       c.tech = technicals(c._bars);
     } catch {
       c.tech = null;
@@ -149,6 +153,8 @@ function analyzeItems(items, u, now = Date.now()) {
     const tickers = new Set(tagTickers(it.title, u));
     // Summaries are noisier: only explicit ticker tags, not company names.
     for (const t of tagTickers(it.summary || '', u, { allowNames: false })) tickers.add(t);
+    // Licensed feeds tag tickers themselves; trust them when an article names a few.
+    if (it.tickersHint?.length && it.tickersHint.length <= 3) for (const t of it.tickersHint) if (u.bySymbol.has(t)) tickers.add(t);
     if (it.forTicker && u.bySymbol.has(it.forTicker)) {
       const s = u.bySymbol.get(it.forTicker);
       if (tickers.size === 0 || it.title.includes(it.forTicker) || it.title.includes(s.short)) tickers.add(it.forTicker);

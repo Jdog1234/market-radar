@@ -3,6 +3,8 @@
 // the stock list (one request covers every stock) or, failing that, a per-stock quote.
 const { get } = require('./http');
 const { num } = require('./universe');
+const { config } = require('./config');
+const polygon = require('./polygon');
 
 const nasdaqSym = (s) => encodeURIComponent(s.replace('.', '/'));
 const ymd = (d) => d.toISOString().slice(0, 10);
@@ -34,6 +36,13 @@ async function cnbcBars(symbol) {
 }
 
 async function liveQuote(symbol, assetclass) {
+  if (polygon.enabled()) {
+    try {
+      const q = (await polygon.snapshot([symbol]))[symbol];
+      if (q) return { price: q.last, volume: q.volume, day: new Date() };
+    } catch {}
+  }
+  if (config.licensedOnly) return null;
   try {
     const q = (await get(`https://api.nasdaq.com/api/quote/${nasdaqSym(symbol)}/info?assetclass=${assetclass}`, { json: true, ttlMs: 2 * 60e3, timeoutMs: 10000 }))?.data?.primaryData;
     const ts = q?.lastTradeTimestamp?.replace(/ ET$/, '').replace(/^(.*?\d{4}).*$/, '$1');
@@ -47,12 +56,19 @@ async function liveQuote(symbol, assetclass) {
 
 // `live` (optional): { price, volume } for right now, e.g. from the stock list.
 async function history(symbol, assetclass = 'stocks', live = null) {
-  let bars;
-  try {
-    bars = await nasdaqBars(symbol, assetclass);
-  } catch {
-    bars = await cnbcBars(symbol);
+  let bars = null;
+  if (polygon.enabled()) bars = await polygon.dailyBars(symbol).then((b) => b.slice(-120)).catch(() => null);
+  if (!bars && config.licensedOnly) throw new Error(`No licensed price data for ${symbol}`);
+  if (!bars) {
+    try {
+      bars = await nasdaqBars(symbol, assetclass);
+    } catch {
+      bars = await cnbcBars(symbol);
+    }
   }
+  // Drop a partial bar for today (handled as the live bar below).
+  const today = etNow().toLocaleDateString('en-US');
+  if (bars.at(-1)?.date === today) bars = bars.slice(0, -1);
   return withLiveBar(bars, symbol, assetclass, live);
 }
 

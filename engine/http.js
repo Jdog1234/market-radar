@@ -9,6 +9,8 @@ const cache = new Map();
 const blockedUntil = new Map();
 const BLOCK_MS = 20 * 60e3;
 const hostOf = (url) => new URL(url).host;
+// Error messages may reach the screen or logs: never include API keys.
+const safe = (url) => url.replace(/(apiKey|api_key|token|key)=[^&]+/gi, '$1=***');
 const isBlocked = (url) => (blockedUntil.get(hostOf(url)) || 0) > Date.now();
 
 async function get(url, { json = false, ttlMs = 0, timeoutMs = 15000, retries = 1, headers = {} } = {}) {
@@ -33,9 +35,9 @@ async function get(url, { json = false, ttlMs = 0, timeoutMs = 15000, retries = 
       });
       if (res.status === 403 || res.status === 429) {
         blockedUntil.set(hostOf(url), Date.now() + BLOCK_MS);
-        throw Object.assign(new Error(`HTTP ${res.status} for ${url}`), { blocked: true });
+        throw Object.assign(new Error(`HTTP ${res.status} for ${safe(url)}`), { blocked: true });
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${safe(url)}`);
       const value = json ? await res.json() : await res.text();
       if (ttlMs) cache.set(key, { at: Date.now(), value });
       return value;

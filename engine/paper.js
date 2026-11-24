@@ -195,7 +195,13 @@ class PaperAccount {
   // quotes: symbol → { last }. Returns true if anything filled.
   tick(quotes) {
     this.sync();
-    for (const [sym, q] of Object.entries(quotes)) if (q?.last) this.last[sym] = q.last;
+    this.book = this.book || {};
+    for (const [sym, q] of Object.entries(quotes)) {
+      if (q?.last) this.last[sym] = q.last;
+      // Real bid/ask (when the data source has them) make fills match what a broker would give.
+      if (q?.bid > 0 && q?.ask >= q.bid && q.at && Date.now() - q.at < 60e3) this.book[sym] = { bid: q.bid, ask: q.ask };
+      else delete this.book[sym];
+    }
     const open = marketOpen();
     let changed = false;
     if (open) {
@@ -204,10 +210,13 @@ class PaperAccount {
         const px = this.last[o.symbol];
         if (!px) continue;
         const buy = o.side === 'buy';
+        const book = this.book[o.symbol];
+        // Buys pay the ask, sells get the bid; without a quote book, last ± slippage.
+        const take = book ? (buy ? book.ask : book.bid) : px * (1 + (buy ? SLIPPAGE : -SLIPPAGE));
         let fill = null;
-        if (o.type === 'market') fill = px * (1 + (buy ? SLIPPAGE : -SLIPPAGE));
-        else if (o.type === 'limit' && (buy ? px <= o.price : px >= o.price)) fill = buy ? Math.min(o.price, px) : Math.max(o.price, px);
-        else if (o.type === 'stop' && (buy ? px >= o.price : px <= o.price)) fill = px * (1 + (buy ? SLIPPAGE : -SLIPPAGE));
+        if (o.type === 'market') fill = take;
+        else if (o.type === 'limit' && (buy ? take <= o.price : take >= o.price)) fill = buy ? Math.min(o.price, take) : Math.max(o.price, take);
+        else if (o.type === 'stop' && (buy ? px >= o.price : px <= o.price)) fill = take;
         if (fill != null) {
           this.fill(o, fill);
           changed = true;

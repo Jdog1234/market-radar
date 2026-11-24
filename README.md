@@ -34,6 +34,12 @@ The app isn't code-signed, so the first launch shows a warning:
   If an older download says the app **"is damaged"**, run `xattr -cr "/Applications/Market Radar.app"` in Terminal, then open it again.
 - **Windows:** SmartScreen says "Windows protected your PC". Click **More info** → **Run anyway**.
 
+## Licensed data, accounts and the website
+
+- **Licensed data:** Settings → *Licensed market data*. Add a [Polygon.io](https://polygon.io/pricing) API key (stored encrypted in the OS keychain) and prices, charts, live quotes (with bid/ask) and news come from Polygon. **Licensed sources only** turns off every free public source, which is required before charging for the app. Still to replace for a fully licensed product: the stock list and market caps (Nasdaq screener), analyst, insider and short-interest data (Nasdaq), and the economic calendar (ForexFactory). Candidates: Financial Modeling Prep or Finnhub.
+- **Accounts and Pro subscriptions:** backend in [`cloud/`](cloud/README.md) (Vercel + Supabase + Stripe), with a step-by-step setup. The app reads `cloud.json`. While it's empty, accounts are off and everything is free. `"paywall": true` locks Before the move, Trade ideas, Stock lookup and Paper trading for free users.
+- **Website:** [`docs/`](docs/index.html), published with GitHub Pages at https://jdog1234.github.io/market-radar/. The waitlist form appears once `WAITLIST_URL` points at the backend.
+
 ## Automatic updates
 
 Every installed copy updates itself. It checks GitHub on launch and every 3 hours, downloads the new version in the background (verifying its checksum), and shows a **Restart to update** bar. If you don't restart, the update applies the next time the app opens. If an update ever fails to start 3 times, the app falls back to its built-in version.
@@ -80,6 +86,8 @@ Code layout:
 - `engine/scanner.js`: combines the above into scores and ranked lists
 - `engine/lookup.js`, `engine/evidence.js`: Stock Lookup and its extra evidence (analysts, earnings, insiders, short interest, crowd)
 - `engine/tracker.js`: signal track record
+- `engine/polygon.js`, `engine/config.js`: licensed data provider and data settings
+- `engine/account.js`: sign-in and plan status (Supabase + the cloud backend)
 - `engine/paper.js`, `engine/quotes.js`: paper-trading account (orders, fills, brackets) and live quotes and candles
 - `renderer/vendor/`: TradingView Lightweight Charts 4.2.3 (Apache-2.0)
 - `main.js`: launcher and auto-updater; `app-main.js`: the app itself (updatable)

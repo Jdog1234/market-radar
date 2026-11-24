@@ -278,7 +278,31 @@ $('#settingsForm').addEventListener('submit', async (e) => {
 });
 
 // ---------- events ----------
+// Pro pages, locked for free users only when the paywall is switched on (cloud.json).
+const PRO_VIEWS = { before: 'Before the move', trades: 'Trade ideas', lookup: 'Stock lookup', paper: 'Paper trading' };
+let acct = { enabled: false, paywall: false, plan: 'free' };
+const locked = (name) => acct.paywall && acct.plan !== 'pro' && PRO_VIEWS[name];
+
 function showView(name) {
+  if (locked(name)) {
+    $$('#nav button').forEach((x) => x.classList.toggle('active', x.dataset.view === name));
+    $$('.view').forEach((v) => v.classList.add('hidden'));
+    let lockView = $('#view-locked');
+    if (!lockView) {
+      lockView = document.createElement('section');
+      lockView.id = 'view-locked';
+      lockView.className = 'view';
+      $('main').insertBefore(lockView, $('.disclaimer'));
+    }
+    lockView.classList.remove('hidden');
+    lockView.innerHTML = `<div class="lock card"><h2>${esc(PRO_VIEWS[name])} is a Pro feature</h2>
+      <p>Pro unlocks Before the move, Trade ideas, Stock lookup and Paper trading.</p>
+      <div class="btns">${acct.signedIn
+        ? '<button class="btn" data-upgrade="month">Upgrade monthly</button><button class="btn ghost" data-upgrade="year">Upgrade yearly</button>'
+        : '<button class="btn" data-goto="settings">Sign in or create an account</button>'}</div></div>`;
+    return;
+  }
+  $('#view-locked')?.classList.add('hidden');
   $$('#nav button').forEach((x) => x.classList.toggle('active', x.dataset.view === name));
   $$('.view').forEach((v) => v.classList.toggle('hidden', v.id !== `view-${name}`));
   if (name === 'track') renderTrack();
@@ -1127,3 +1151,102 @@ document.addEventListener('click', async (e) => {
 });
 
 radar.paper.onUpdate(applyPaper);
+
+// ---------- licensed data (Polygon) ----------
+function polyStatus(s) {
+  $('#polyStatus').innerHTML = s.polygonConfigured
+    ? '<span class="msg-ok">● Polygon key saved (encrypted). Licensed data is on.</span>'
+    : '<span class="muted">No key saved: using free public sources (personal mode).</span>';
+  $('#licensedOnly').checked = !!s.licensedOnly;
+}
+radar.getSettings().then(polyStatus);
+$('#polySave').addEventListener('click', async () => {
+  const k = $('#polyKey').value.trim();
+  if (!k) return;
+  try {
+    polyStatus(await radar.setPolygonKey(k));
+    $('#polyKey').value = '';
+  } catch (e) {
+    $('#polyStatus').innerHTML = `<span class="msg-err">${esc(String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))}</span>`;
+  }
+});
+$('#polyRemove').addEventListener('click', async () => polyStatus(await radar.setPolygonKey('')));
+$('#polyTest').addEventListener('click', async () => {
+  $('#polyStatus').innerHTML = '<span class="muted">Testing…</span>';
+  const r = await radar.testPolygon();
+  const ok = (b, label) => `${b ? '<span class="msg-ok">✓</span>' : '<span class="msg-err">✕</span>'} ${label}`;
+  $('#polyStatus').innerHTML = `${ok(r.daily, 'Daily prices')} · ${ok(r.snapshot, 'Live quotes')} · ${ok(r.news, 'News')}` +
+    (r.errors?.length ? `<div class="muted">${r.errors.map(esc).join('<br>')}</div>` : '');
+});
+$('#licensedOnly').addEventListener('change', async (e) => {
+  if (e.target.checked && !(await radar.getSettings()).polygonConfigured) {
+    e.target.checked = false;
+    $('#polyStatus').innerHTML = '<span class="msg-err">Add a Polygon key first, or the app would have no data.</span>';
+    return;
+  }
+  polyStatus(await radar.saveSettings({ licensedOnly: e.target.checked }));
+  radar.runScan();
+});
+
+// ---------- account ----------
+function renderAccount(st) {
+  acct = st;
+  const card = $('#acctCard');
+  $('#planBadge').innerHTML = st.enabled && st.signedIn ? `<span class="plan ${st.plan === 'pro' ? 'pro' : ''}">${st.plan === 'pro' ? 'PRO' : 'FREE'}</span>` : '';
+  if (!st.enabled) {
+    card.innerHTML = '<h3>Account</h3><p class="small muted">Accounts aren\'t switched on yet. Everything in the app is free during the beta.</p>';
+    return;
+  }
+  if (!st.signedIn) {
+    card.innerHTML = `<h3>Account</h3><p class="small muted">Sign in to sync your plan. ${st.paywall ? 'Pro features need a Pro plan.' : 'Everything is free during the beta.'}</p>
+      <form class="acct-form" id="acctForm"><input name="email" type="email" placeholder="Email" autocomplete="email" required />
+        <input name="password" type="password" placeholder="Password (8+ characters)" autocomplete="current-password" minlength="8" required />
+        <button class="btn" type="submit" data-mode="signin">Sign in</button><button class="btn ghost" type="submit" data-mode="signup">Create account</button></form>
+      <div id="acctMsg" class="small" style="margin-top:8px"></div>`;
+    return;
+  }
+  const renew = st.periodEnd ? ` · renews ${new Date(st.periodEnd).toLocaleDateString()}` : '';
+  card.innerHTML = `<h3>Account</h3><p class="small">${esc(st.email || '')} <span class="plan ${st.plan === 'pro' ? 'pro' : ''}">${st.plan === 'pro' ? 'PRO' : 'FREE'}</span><span class="muted">${st.plan === 'pro' ? esc(renew) : ''}</span></p>
+    <div class="acct-form">${st.plan === 'pro'
+      ? '<button class="btn ghost" id="acctBilling">Manage billing</button>'
+      : '<button class="btn" data-upgrade="month">Upgrade to Pro (monthly)</button><button class="btn ghost" data-upgrade="year">Yearly</button>'}
+      <button class="btn ghost" id="acctRefresh">Refresh plan</button><button class="btn ghost" id="acctOut">Sign out</button></div>
+    <div id="acctMsg" class="small" style="margin-top:8px"></div>`;
+}
+const acctErr = (e) => {
+  const m = $('#acctMsg');
+  if (m) m.innerHTML = `<span class="msg-err">${esc(String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))}</span>`;
+};
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'acctForm') return;
+  e.preventDefault();
+  const mode = e.submitter?.dataset.mode || 'signin';
+  const { email, password } = e.target;
+  try {
+    const r = await (mode === 'signup' ? radar.account.signUp(email.value, password.value) : radar.account.signIn(email.value, password.value));
+    if (r.needsConfirm) return ($('#acctMsg').innerHTML = '<span class="msg-ok">Check your email to confirm your account, then sign in.</span>');
+    renderAccount(r);
+  } catch (err) {
+    acctErr(err);
+  }
+});
+document.addEventListener('click', async (e) => {
+  const up = e.target.closest('[data-upgrade]');
+  const go = e.target.closest('[data-goto]');
+  try {
+    if (up) {
+      await radar.account.upgrade(up.dataset.upgrade);
+      const m = $('#acctMsg');
+      if (m) m.innerHTML = '<span class="muted">Checkout opened in your browser. After paying, click Refresh plan.</span>';
+    }
+    if (go) showView(go.dataset.goto);
+    if (e.target.id === 'acctBilling') await radar.account.billing();
+    if (e.target.id === 'acctRefresh') renderAccount(await radar.account.refresh());
+    if (e.target.id === 'acctOut') renderAccount(await radar.account.signOut());
+  } catch (err) {
+    acctErr(err);
+  }
+});
+radar.account.status().then(renderAccount);
+// Re-check the plan when the window regains focus (e.g. after paying in the browser).
+window.addEventListener('focus', () => acct.signedIn && radar.account.refresh().then(renderAccount).catch(() => {}));

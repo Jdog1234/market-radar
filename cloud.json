@@ -1,0 +1,7 @@
+{
+  "_comment": "Fill in after setting up Supabase + Vercel (cloud/README.md). Empty = accounts off, everything free. paywall=true locks Pro features for free users.",
+  "supabaseUrl": "",
+  "supabaseAnonKey": "",
+  "apiBase": "",
+  "paywall": false
+}
