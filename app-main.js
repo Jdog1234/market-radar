@@ -344,9 +344,8 @@ function start(launcher) {
   ipcMain.handle('alerts:clearFired', () => paperDo(() => alerts.clearFired()));
   ipcMain.handle('paper:reset', (_e, cash) => paperDo(() => paper.reset(Number(cash) || settings.accountSize || 10000)));
   ipcMain.handle('account:status', () => account.status());
-  ipcMain.handle('account:signin', (_e, email, password) => account.auth('signin', String(email || '').trim(), String(password || '')));
-  ipcMain.handle('account:signup', (_e, email, password) => account.auth('signup', String(email || '').trim(), String(password || '')));
-  ipcMain.handle('account:refresh', () => account.refreshPlan());
+  ipcMain.handle('account:activate', (_e, key) => account.activate(key));
+  ipcMain.handle('account:refresh', () => account.refreshPlan({ force: true }));
   ipcMain.handle('account:signout', () => account.signOut());
   ipcMain.handle('account:upgrade', async (_e, interval) => shell.openExternal(await account.checkoutUrl(interval === 'year' ? 'year' : 'month')));
   ipcMain.handle('account:billing', async () => shell.openExternal(await account.portalUrl()));
@@ -362,7 +361,9 @@ function start(launcher) {
     if (c.confidence === 'High' || (c.onWatch && Math.abs(c.newsScore) >= 3)) notified.add(`${c.symbol}:${Math.sign(c.composite)}`);
   }
   account = new Account(path.join(dataDir(), 'account.bin'), safeStorage);
+  // Re-check the Pro license now and then (refreshPlan only calls Gumroad twice a day).
   account.refreshPlan().catch(() => {});
+  setInterval(() => account.refreshPlan().then((st) => send('account:status', st)).catch(() => {}), 3600e3);
   paper = new PaperAccount(path.join(dataDir(), 'paper-account.json'), settings.accountSize || 10000);
   alerts = new Alerts(path.join(dataDir(), 'alerts.json'));
   createWindow(launcher);

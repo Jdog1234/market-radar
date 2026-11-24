@@ -1,5 +1,6 @@
-// User accounts (Supabase Auth) and plan status (the Market Radar backend in cloud/).
-// The session is encrypted with the OS keychain before it touches disk.
+// Pro subscriptions through Gumroad license keys. A subscriber pastes the key from their
+// Gumroad receipt; the app checks it with Gumroad's public license API (no server or secret
+// needed). The key is encrypted with the OS keychain before it touches disk.
 const fs = require('fs');
 const path = require('path');
 
@@ -8,119 +9,122 @@ try {
   cfg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'cloud.json'), 'utf8'));
 } catch {}
 
+const VERIFY_URL = 'https://api.gumroad.com/v2/licenses/verify';
+const RECHECK_MS = 12 * 3600e3; // re-verify twice a day
+const OFFLINE_GRACE_MS = 3 * 864e5; // keep Pro for 3 days if Gumroad can't be reached
+
+const enabled = () => !!(cfg.gumroadProductId && cfg.checkoutUrl);
+
 // Network failures get a readable message instead of "fetch failed".
 async function request(url, opts) {
   try {
     return await fetch(url, opts);
   } catch {
-    throw new Error("Can't reach the account server. Check your internet connection and try again.");
+    throw new Error("Can't reach Gumroad to check your license. Check your internet connection and try again.");
   }
 }
 
-const enabled = () => !!(cfg.supabaseUrl && cfg.supabaseAnonKey && cfg.apiBase);
+// Is this purchase an active subscription? Gumroad sets these timestamps to when the
+// membership ends (they can be in the future while a cancelled period runs out).
+function activePlan(p, now = Date.now()) {
+  if (!p || p.refunded || p.chargebacked || (p.disputed && !p.dispute_won)) return false;
+  for (const k of ['subscription_ended_at', 'subscription_cancelled_at', 'subscription_failed_at']) {
+    if (p[k] && Date.parse(p[k]) <= now) return false;
+  }
+  return true;
+}
 
 class Account {
   constructor(file, safeStorage) {
     this.file = file;
     this.safe = safeStorage;
-    this.session = null;
-    this.me = null; // { email, plan, periodEnd }
+    this.lic = null; // { key, plan, email, subscriptionId, recurrence, endsAt, checkedAt }
     try {
-      const enc = fs.readFileSync(file);
-      this.session = JSON.parse(this.safe.decryptString(enc));
-      this.me = this.session.me || null;
+      this.lic = JSON.parse(this.safe.decryptString(fs.readFileSync(file)));
     } catch {}
   }
 
   save() {
-    if (!this.session) return fs.rmSync(this.file, { force: true });
-    if (!this.safe.isEncryptionAvailable()) return; // keep the session in memory only
-    fs.writeFileSync(this.file, this.safe.encryptString(JSON.stringify({ ...this.session, me: this.me })));
+    if (!this.lic) return fs.rmSync(this.file, { force: true });
+    if (!this.safe.isEncryptionAvailable()) return; // keep it in memory only
+    fs.writeFileSync(this.file, this.safe.encryptString(JSON.stringify(this.lic)));
   }
 
   status() {
+    const l = this.lic;
     return {
       enabled: enabled(),
       paywall: enabled() && !!cfg.paywall,
-      signedIn: !!this.session,
-      email: this.me?.email || this.session?.user?.email || null,
-      plan: this.me?.plan || 'free',
-      periodEnd: this.me?.periodEnd || null,
+      signedIn: !!l, // a license key is saved
+      email: l?.email || null,
+      plan: l?.plan || 'free',
+      periodEnd: l?.endsAt || null,
+      recurrence: l?.recurrence || null,
+      keyHint: l?.key ? `••••${l.key.slice(-4)}` : null,
     };
   }
 
-  async auth(kind, email, password) {
-    if (!enabled()) throw new Error('Accounts are not switched on yet');
-    const url = kind === 'signup' ? `${cfg.supabaseUrl}/auth/v1/signup` : `${cfg.supabaseUrl}/auth/v1/token?grant_type=password`;
-    const res = await request(url, {
+  async verify(key) {
+    const res = await request(VERIFY_URL, {
       method: 'POST',
-      headers: { apikey: cfg.supabaseAnonKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ product_id: cfg.gumroadProductId, license_key: key, increment_uses_count: 'false' }),
     });
     const d = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(d.error_description || d.msg || d.message || 'Sign-in failed');
-    if (!d.access_token) return { needsConfirm: true }; // email confirmation is on
-    this.session = { access_token: d.access_token, refresh_token: d.refresh_token, expires_at: Date.now() + (d.expires_in || 3600) * 1000, user: { email: d.user?.email } };
-    await this.refreshPlan();
+    if (res.status === 404 || d.success === false) throw new Error("That license key wasn't found. Copy it exactly from your Gumroad receipt.");
+    if (!res.ok) throw new Error(`Gumroad couldn't check the key right now (error ${res.status}). Try again in a minute.`);
+    return d.purchase || {};
+  }
+
+  // Save a key the user pasted, after Gumroad confirms it.
+  async activate(key) {
+    if (!enabled()) throw new Error('Subscriptions are not switched on yet');
+    key = String(key || '').trim().toUpperCase();
+    if (!/^[A-Z0-9]{8}(-[A-Z0-9]{8}){3}$/.test(key)) throw new Error('A license key looks like XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX');
+    const p = await this.verify(key);
+    this.lic = this.fromPurchase(key, p);
+    this.save();
+    if (this.lic.plan !== 'pro') throw new Error('This subscription has ended. Renew it on Gumroad, then click Check again.');
     return this.status();
   }
 
-  async token() {
-    if (!this.session) throw new Error('Sign in first');
-    if (Date.now() > this.session.expires_at - 60e3) {
-      const res = await request(`${cfg.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
-        method: 'POST',
-        headers: { apikey: cfg.supabaseAnonKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: this.session.refresh_token }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok || !d.access_token) {
-        this.signOut();
-        throw new Error('Your session expired. Please sign in again.');
-      }
-      Object.assign(this.session, { access_token: d.access_token, refresh_token: d.refresh_token, expires_at: Date.now() + (d.expires_in || 3600) * 1000 });
-      this.save();
-    }
-    return this.session.access_token;
+  fromPurchase(key, p) {
+    const ends = ['subscription_ended_at', 'subscription_cancelled_at', 'subscription_failed_at'].map((k) => p[k]).find(Boolean);
+    return { key, plan: activePlan(p) ? 'pro' : 'free', email: p.email || null, subscriptionId: p.subscription_id || null, recurrence: p.recurrence || null, endsAt: ends || null, checkedAt: Date.now() };
   }
 
-  async api(pathname, body) {
-    const res = await request(`${cfg.apiBase}${pathname}`, {
-      method: body ? 'POST' : 'GET',
-      headers: { Authorization: `Bearer ${await this.token()}`, 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const d = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`);
-    return d;
-  }
-
-  // Plan check. Offline: keep the last known plan for up to 3 days.
-  async refreshPlan() {
-    if (!enabled() || !this.session) return this.status();
+  // Re-check the saved key. Offline: keep the last known plan for up to 3 days.
+  async refreshPlan({ force = false } = {}) {
+    if (!enabled() || !this.lic) return this.status();
+    if (!force && Date.now() - (this.lic.checkedAt || 0) < RECHECK_MS) return this.status();
     try {
-      this.me = { ...(await this.api('/api/me')), checkedAt: Date.now() };
+      this.lic = this.fromPurchase(this.lic.key, await this.verify(this.lic.key));
     } catch (e) {
-      if (!this.me?.checkedAt || Date.now() - this.me.checkedAt > 3 * 864e5) this.me = { ...(this.me || {}), plan: 'free' };
-      if (/sign in/i.test(e.message)) throw e;
+      if (/wasn't found/.test(e.message)) this.lic.plan = 'free'; // key disabled or refunded
+      else if (Date.now() - (this.lic.checkedAt || 0) > OFFLINE_GRACE_MS) this.lic.plan = 'free';
+      if (force) {
+        this.save();
+        throw e;
+      }
     }
     this.save();
     return this.status();
   }
 
   checkoutUrl(interval) {
-    return this.api('/api/checkout', { interval }).then((d) => d.url);
+    return `${cfg.checkoutUrl}${cfg.checkoutUrl.includes('?') ? '&' : '?'}wanted=true${interval === 'year' ? '&recurrence=yearly' : ''}`;
   }
+
+  // Gumroad's page for changing the card or cancelling.
   portalUrl() {
-    return this.api('/api/portal', {}).then((d) => d.url);
+    return this.lic?.subscriptionId ? `https://app.gumroad.com/subscriptions/${encodeURIComponent(this.lic.subscriptionId)}/manage` : 'https://app.gumroad.com/library';
   }
 
   signOut() {
-    this.session = null;
-    this.me = null;
+    this.lic = null;
     this.save();
     return this.status();
   }
 }
 
-module.exports = { Account, accountsEnabled: enabled };
+module.exports = { Account, accountsEnabled: enabled, activePlan };

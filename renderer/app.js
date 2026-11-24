@@ -303,9 +303,7 @@ function showView(name) {
     lockView.classList.remove('hidden');
     lockView.innerHTML = `<div class="lock card"><h2>${esc(PRO_VIEWS[name])} is a Pro feature</h2>
       <p>${PRO_PITCH}</p>
-      <div class="btns">${acct.signedIn
-        ? '<button class="btn" data-upgrade="month">Upgrade monthly</button><button class="btn ghost" data-upgrade="year">Upgrade yearly</button>'
-        : '<button class="btn" data-goto="settings">Sign in or create an account</button>'}</div></div>`;
+      <div class="btns"><button class="btn" data-upgrade="month">Get Pro ($19/month)</button><button class="btn ghost" data-upgrade="year">Yearly ($190)</button><button class="btn ghost" data-goto="settings">I have a license key</button></div></div>`;
     return;
   }
   $('#view-locked')?.classList.add('hidden');
@@ -1977,9 +1975,9 @@ function miniLines(m, clear = false) {
 function proOffer(title) {
   return [
     { label: `<b>${esc(title)}</b>`, run: () => {} },
-    ...(acct.signedIn
-      ? [{ label: 'Upgrade to Pro (monthly)', run: () => radar.account.upgrade('month') }, { label: 'Upgrade to Pro (yearly)', run: () => radar.account.upgrade('year') }]
-      : [{ label: 'Sign in or create an account', run: () => showView('settings') }]),
+    { label: 'Get Pro ($19/month)', run: () => radar.account.upgrade('month') },
+    { label: 'Get Pro yearly ($190)', run: () => radar.account.upgrade('year') },
+    { label: 'I have a license key', run: () => showView('settings') },
   ];
 }
 
@@ -2491,25 +2489,27 @@ function renderAccount(st) {
     syncTicket();
   }
   const card = $('#acctCard');
-  $('#planBadge').innerHTML = st.enabled && st.signedIn ? `<span class="plan ${st.plan === 'pro' ? 'pro' : ''}">${st.plan === 'pro' ? 'PRO' : 'FREE'}</span>` : '';
+  const pro = st.plan === 'pro';
+  $('#planBadge').innerHTML = st.enabled && st.paywall ? `<span class="plan ${pro ? 'pro' : ''}">${pro ? 'PRO' : 'FREE'}</span>` : '';
   if (!st.enabled) {
-    card.innerHTML = '<h3>Account</h3><p class="small muted">Accounts aren\'t switched on yet. Everything in the app is free during the beta.</p>';
+    card.innerHTML = '<h3>Market Radar Pro</h3><p class="small muted">Subscriptions aren\'t switched on yet. Everything in the app is free during the beta.</p>';
     return;
   }
-  if (!st.signedIn) {
-    card.innerHTML = `<h3>Account</h3><p class="small muted">Sign in to sync your plan. ${st.paywall ? 'Pro features need a Pro plan.' : 'Everything is free during the beta.'}</p>
-      <form class="acct-form" id="acctForm"><input name="email" type="email" placeholder="Email" autocomplete="email" required />
-        <input name="password" type="password" placeholder="Password (8+ characters)" autocomplete="current-password" minlength="8" required />
-        <button class="btn" type="submit" data-mode="signin">Sign in</button><button class="btn ghost" type="submit" data-mode="signup">Create account</button></form>
+  const keyForm = `<form class="acct-form" id="acctForm"><input name="key" placeholder="License key (XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX)" autocomplete="off" spellcheck="false" required />
+      <button class="btn" type="submit">Activate</button></form>`;
+  if (!pro) {
+    card.innerHTML = `<h3>Market Radar Pro</h3>
+      <p class="small muted">${esc(PRO_PITCH)} $19/month or $190/year, cancel anytime. Pay by card or PayPal through Gumroad.</p>
+      <div class="acct-form"><button class="btn" data-upgrade="month">Get Pro (monthly)</button><button class="btn ghost" data-upgrade="year">Get Pro (yearly)</button></div>
+      <p class="small muted" style="margin-top:14px">${st.signedIn ? `Your saved key ${esc(st.keyHint || '')} isn't active (the subscription ended or the payment failed). Renew on Gumroad, then click Check again, or paste a new key.` : 'Already subscribed? Paste the license key from your Gumroad receipt:'}</p>
+      ${keyForm}
+      ${st.signedIn ? '<div class="acct-form"><button class="btn ghost" id="acctRefresh">Check again</button><button class="btn ghost" id="acctBilling">Manage subscription</button><button class="btn ghost" id="acctOut">Remove key</button></div>' : ''}
       <div id="acctMsg" class="small" style="margin-top:8px"></div>`;
     return;
   }
-  const renew = st.periodEnd ? ` · renews ${new Date(st.periodEnd).toLocaleDateString()}` : '';
-  card.innerHTML = `<h3>Account</h3><p class="small">${esc(st.email || '')} <span class="plan ${st.plan === 'pro' ? 'pro' : ''}">${st.plan === 'pro' ? 'PRO' : 'FREE'}</span><span class="muted">${st.plan === 'pro' ? esc(renew) : ''}</span></p>
-    <div class="acct-form">${st.plan === 'pro'
-      ? '<button class="btn ghost" id="acctBilling">Manage billing</button>'
-      : '<button class="btn" data-upgrade="month">Upgrade to Pro (monthly)</button><button class="btn ghost" data-upgrade="year">Yearly</button>'}
-      <button class="btn ghost" id="acctRefresh">Refresh plan</button><button class="btn ghost" id="acctOut">Sign out</button></div>
+  const until = st.periodEnd ? ` · ends ${new Date(st.periodEnd).toLocaleDateString()}` : st.recurrence ? ` · renews ${esc(st.recurrence)}` : '';
+  card.innerHTML = `<h3>Market Radar Pro</h3><p class="small"><span class="plan pro">PRO</span> ${esc(st.email || '')} <span class="muted">· key ${esc(st.keyHint || '')}${until}</span></p>
+    <div class="acct-form"><button class="btn ghost" id="acctBilling">Manage subscription</button><button class="btn ghost" id="acctRefresh">Check again</button><button class="btn ghost" id="acctOut">Remove key</button></div>
     <div id="acctMsg" class="small" style="margin-top:8px"></div>`;
 }
 const acctErr = (e) => {
@@ -2519,14 +2519,16 @@ const acctErr = (e) => {
 document.addEventListener('submit', async (e) => {
   if (e.target.id !== 'acctForm') return;
   e.preventDefault();
-  const mode = e.submitter?.dataset.mode || 'signin';
-  const { email, password } = e.target;
+  const btn = e.target.querySelector('button');
+  btn.disabled = true;
   try {
-    const r = await (mode === 'signup' ? radar.account.signUp(email.value, password.value) : radar.account.signIn(email.value, password.value));
-    if (r.needsConfirm) return ($('#acctMsg').innerHTML = '<span class="msg-ok">Check your email to confirm your account, then sign in.</span>');
-    renderAccount(r);
+    renderAccount(await radar.account.activate(e.target.key.value));
+    $('#acctMsg').innerHTML = '<span class="msg-ok">Pro is active. Thanks for subscribing!</span>';
   } catch (err) {
+    renderAccount(await radar.account.status());
     acctErr(err);
+  } finally {
+    btn.disabled = false;
   }
 });
 document.addEventListener('click', async (e) => {
@@ -2536,16 +2538,15 @@ document.addEventListener('click', async (e) => {
     if (up) {
       await radar.account.upgrade(up.dataset.upgrade);
       const m = $('#acctMsg');
-      if (m) m.innerHTML = '<span class="muted">Checkout opened in your browser. After paying, click Refresh plan.</span>';
+      if (m) m.innerHTML = '<span class="muted">Checkout opened in your browser. After paying, copy the license key from your receipt and paste it here.</span>';
     }
     if (go) showView(go.dataset.goto);
     if (e.target.id === 'acctBilling') await radar.account.billing();
     if (e.target.id === 'acctRefresh') renderAccount(await radar.account.refresh());
-    if (e.target.id === 'acctOut') renderAccount(await radar.account.signOut());
+    if (e.target.id === 'acctOut' && confirm('Remove the license key from this computer? You can paste it again any time.')) renderAccount(await radar.account.signOut());
   } catch (err) {
     acctErr(err);
   }
 });
+radar.account.onStatus(renderAccount);
 radar.account.status().then(renderAccount);
-// Re-check the plan when the window regains focus (e.g. after paying in the browser).
-window.addEventListener('focus', () => acct.signedIn && radar.account.refresh().then(renderAccount).catch(() => {}));

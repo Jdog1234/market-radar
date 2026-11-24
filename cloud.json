@@ -1,7 +1,6 @@
 {
-  "_comment": "Fill in after setting up Supabase + Vercel (cloud/README.md). Empty = accounts off, everything free. paywall=true locks Pro features for free users.",
-  "supabaseUrl": "",
-  "supabaseAnonKey": "",
-  "apiBase": "",
+  "_comment": "Pro subscriptions via Gumroad license keys. Subscriptions turn on when checkoutUrl is set (after the Gumroad product is published); paywall=true then locks Pro features for free users.",
+  "gumroadProductId": "jMarS8vAA-X32ooJSfKONg==",
+  "checkoutUrl": "",
   "paywall": false
 }
