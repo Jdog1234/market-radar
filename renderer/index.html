@@ -13,6 +13,7 @@
       <button data-view="signals" class="active">Signals</button>
       <button data-view="before">Before the move</button>
       <button data-view="trades">Trade ideas</button>
+      <button data-view="paper">Paper trading</button>
       <button data-view="lookup">Stock lookup</button>
       <button data-view="watchlist">Watchlist</button>
       <button data-view="news">News feed</button>
@@ -115,6 +116,46 @@
       <div id="tradeList" class="trades"></div>
     </section>
 
+    <section id="view-paper" class="view hidden">
+      <div class="pt-acct" id="ptAcct"></div>
+      <div class="pt-main">
+        <div class="card pt-chartcard">
+          <div class="pt-head">
+            <input id="ptSym" type="search" placeholder="Symbol" autocomplete="off" spellcheck="false" />
+            <div id="ptQuote" class="pt-quote"></div>
+            <div class="chips pt-tf" id="ptTf">
+              <button data-tf="1m">1m</button><button data-tf="5m" class="on">5m</button><button data-tf="15m">15m</button>
+              <button data-tf="1h">1h</button><button data-tf="D">1D</button><button data-tf="W">1W</button>
+            </div>
+          </div>
+          <div id="ptChart" class="pt-chart"></div>
+          <div class="muted small pt-attr">Charts by <a data-url="https://www.tradingview.com/">TradingView</a> Lightweight Charts. Times are New York (ET). Click the chart to set a limit/stop price.</div>
+        </div>
+        <div class="card pt-ticket">
+          <div class="pt-side"><button data-side="buy" class="on buy">Buy</button><button data-side="sell" class="sell">Sell / Short</button></div>
+          <label>Order type
+            <select id="ptType"><option value="market">Market</option><option value="limit">Limit</option><option value="stop">Stop</option></select></label>
+          <label id="ptPriceRow" class="hidden">Price <input id="ptPrice" type="number" step="0.01" min="0" /></label>
+          <label>Shares <input id="ptQty" type="number" min="1" step="1" value="10" /></label>
+          <label class="check"><input type="checkbox" id="ptUseSL" /> Stop-loss</label>
+          <input id="ptSL" type="number" step="0.01" min="0" class="hidden" placeholder="Stop-loss price" />
+          <label class="check"><input type="checkbox" id="ptUseTP" /> Take-profit</label>
+          <input id="ptTP" type="number" step="0.01" min="0" class="hidden" placeholder="Take-profit price" />
+          <div id="ptEst" class="pt-est"></div>
+          <button class="btn pt-submit" id="ptSubmit">Place order</button>
+          <div id="ptMsg" class="small"></div>
+        </div>
+      </div>
+      <div class="card pt-tabs-card">
+        <div class="chips pt-tabs" id="ptTabs">
+          <button data-t="pos" class="on">Positions</button><button data-t="ord">Working orders</button>
+          <button data-t="hist">History</button><button data-t="eq">Equity curve</button>
+        </div>
+        <div id="ptTabBody"></div>
+        <div id="ptEqChart" class="pt-eq hidden"></div>
+      </div>
+    </section>
+
     <section id="view-lookup" class="view hidden">
       <div id="lookup"><div class="empty">Search any US-listed stock in the box at the top (e.g. <b>AAPL</b> or <b>Palantir</b>). You'll get a verdict on whether the news and other evidence point up or down, and why.</div></div>
     </section>
@@ -161,6 +202,7 @@
   </main>
 
   <div id="drawer" class="drawer hidden"><div class="drawer-inner"></div></div>
+  <script src="vendor/lightweight-charts.standalone.production.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

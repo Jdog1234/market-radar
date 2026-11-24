@@ -11,6 +11,8 @@ A desktop app for Mac and Windows (64-bit). It reads about 3,000 headlines from 
 
 **Trade ideas:** concrete plans with entry, stop (1.5× the stock's normal daily move), target (2× the risk), time frame, and position size for your account. The win rate shown is measured from the app's own past trade ideas, never guessed.
 
+**Paper trading:** practice with fake money on live prices. You get a TradingView-style candlestick chart (1m to 1W, including pre- and after-market), an order ticket with market, limit and stop orders plus an attached stop-loss and take-profit, live positions and P&L, order history, and an equity curve. Every Trade idea has a **Paper trade this** button that fills in the ticket for you.
+
 **Track record:** every scan's signals are logged and checked 1, 5 and 20 trading days later, so you can see how often the calls were actually right.
 
 It also has a live **news feed**, an **economic calendar** for forex and macro news (CPI, jobs, FOMC… with plain-English explanations), an **earnings calendar**, and a **research guide** that explains every rule the app uses ([RESEARCH.md](RESEARCH.md)).
@@ -78,6 +80,8 @@ Code layout:
 - `engine/scanner.js`: combines the above into scores and ranked lists
 - `engine/lookup.js`, `engine/evidence.js`: Stock Lookup and its extra evidence (analysts, earnings, insiders, short interest, crowd)
 - `engine/tracker.js`: signal track record
+- `engine/paper.js`, `engine/quotes.js`: paper-trading account (orders, fills, brackets) and live quotes and candles
+- `renderer/vendor/`: TradingView Lightweight Charts 4.2.3 (Apache-2.0)
 - `main.js`: launcher and auto-updater; `app-main.js`: the app itself (updatable)
 - `renderer/`: the UI
 

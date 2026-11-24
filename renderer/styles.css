@@ -225,3 +225,43 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .chance { margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: var(--panel2); font-size: 12.5px; }
 .tag { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); }
 .sizing { margin-bottom: 14px; font-size: 13px; }
+
+/* ---- paper trading ---- */
+.pt-acct { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; margin-bottom: 12px; }
+.pt-acct .stat { padding: 8px 12px; min-width: 120px; }
+.pt-acct .stat b { font-size: 17px; }
+.pt-acct .mkt { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+.pt-acct .mkt .dotlive { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+.pt-main { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 12px; }
+.pt-chartcard { padding: 10px 12px; }
+.pt-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.pt-head input { width: 110px; text-transform: uppercase; font-weight: 700; }
+.pt-quote { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
+.pt-quote b { font-size: 18px; }
+.pt-tf { margin-left: auto; }
+.pt-tf button, .pt-tabs button { all: unset; cursor: pointer; font-size: 12px; padding: 4px 9px; border-radius: 6px; color: var(--muted); }
+.pt-tf button.on, .pt-tabs button.on { background: var(--panel2); color: var(--text); font-weight: 600; }
+.pt-chart { height: 460px; width: 100%; }
+.pt-attr { margin-top: 6px; font-size: 11px; }
+.pt-ticket { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.pt-ticket label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+.pt-ticket label.check { flex-direction: row; color: var(--text); }
+.pt-ticket input[type=number], .pt-ticket select { background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 7px; padding: 7px 9px; font: inherit; }
+.pt-side { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pt-side button { border: 1px solid var(--line); background: var(--panel2); color: var(--muted); border-radius: 7px; padding: 8px; font-weight: 700; cursor: pointer; }
+.pt-side button.on.buy { background: var(--up); border-color: var(--up); color: #04140a; }
+.pt-side button.on.sell { background: var(--down); border-color: var(--down); color: #fff; }
+.pt-submit.buy { background: var(--up); color: #04140a; }
+.pt-submit.sell { background: var(--down); }
+.pt-est { background: var(--panel2); border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.pt-est b { color: var(--text); }
+.pt-tabs-card { margin-top: 12px; }
+.pt-tabs { margin-bottom: 8px; }
+.pt-eq { height: 220px; width: 100%; }
+.mini button.x { all: unset; cursor: pointer; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 1px 8px; font-size: 11.5px; }
+.mini button.x:hover { color: var(--text); border-color: var(--muted); }
+.mini tr.clk { cursor: pointer; }
+.msg-ok { color: var(--up); }
+.msg-err { color: var(--down); }
+.btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+@media (max-width: 1150px) { .pt-main { grid-template-columns: minmax(0, 1fr); } }

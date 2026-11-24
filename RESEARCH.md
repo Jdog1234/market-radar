@@ -205,6 +205,20 @@ The app does **not** invent probabilities. Every trade idea is logged, and once 
 
 ---
 
+## 10. Paper trading (added in v1.3)
+
+Paper trading is how you check whether you can actually execute these ideas before risking money. The simulation is deliberately strict, so results aren't flattering:
+
+- **Fills only in regular hours** (9:30–16:00 ET). Orders placed outside them fill at the open, so overnight gaps hit you just as they would in a real account.
+- **Market and stop orders pay 0.05% slippage.** Limit orders fill at your price, or better if the price gaps through it.
+- **Brackets:** an attached stop-loss and take-profit become active when the entry fills, and one cancels the other. If a market entry fills away from the planned price, both move by the same amount so the planned risk stays the same.
+- **Shorts are allowed,** with margin-style buying power (2× equity minus open positions).
+- **No commissions** (most US brokers charge none). Real trading adds spreads on thin stocks, so expect live results to be slightly worse.
+
+Compare your paper results with the app's Track record. If your paper trades do worse than the ideas themselves, the problem is execution (chasing, moving stops), not the signals.
+
+---
+
 ### References
 - Ball, R. & Brown, P. (1968). An empirical evaluation of accounting income numbers. *Journal of Accounting Research.*
 - Bernard, V. & Thomas, J. (1989). Post-earnings-announcement drift: delayed price response or risk premium? *Journal of Accounting Research.*

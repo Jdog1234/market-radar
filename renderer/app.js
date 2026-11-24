@@ -282,6 +282,10 @@ function showView(name) {
   $$('#nav button').forEach((x) => x.classList.toggle('active', x.dataset.view === name));
   $$('.view').forEach((v) => v.classList.toggle('hidden', v.id !== `view-${name}`));
   if (name === 'track') renderTrack();
+  if (name === 'paper') {
+    if (!pt.chart) ptSetSymbol(pt.sym);
+    else radar.paper.watch([pt.sym]).then(applyPaper);
+  } else if (window.radar) radar.paper.watch([]);
 }
 $('#nav').addEventListener('click', (e) => {
   const b = e.target.closest('button');
@@ -289,6 +293,8 @@ $('#nav').addEventListener('click', (e) => {
 });
 
 document.addEventListener('click', (e) => {
+  const po = e.target.closest('[data-ptsym-open]');
+  if (po) { openPaper({ symbol: po.dataset.ptsymOpen }); return; }
   const gd = e.target.closest('[data-guide]');
   if (gd) { showView('guide'); return; }
   const lk = e.target.closest('[data-lookup]');
@@ -418,6 +424,7 @@ function renderLookup(r) {
     <div class="lk-head">
       <h1>${esc(r.symbol)}</h1>
       <div><div>${esc(r.name)}</div><div class="muted small">${esc(r.sector)}${r.industry ? ' · ' + esc(r.industry) : ''} · ${cap(r.marketCap)}</div></div>
+      <button class="btn ghost" data-ptsym-open="${esc(r.symbol)}">Paper trade ${esc(r.symbol)}</button>
       <div style="margin-left:auto;text-align:right">${t.last ? `<div style="font-size:22px;font-weight:700">${money(t.last)}</div><div class="${cls(t.ret1)}">${pct(t.ret1)} today</div>` : ''}</div>
     </div>
 
@@ -607,8 +614,313 @@ function renderTrades() {
       ${shares ? `<div class="note">Size: <b>${shares} shares</b> (~$${cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}${cost > s.accountSize ? ', more than your account, so reduce it' : ''})</div>` : ''}
       ${flags ? `<div class="flags">${flags}</div>` : ''}
       <div class="chance">${chance}</div>
+      <button class="btn" style="margin-top:10px" data-papertrade="${esc(t.symbol)}">Paper trade this →</button>
     </div>`;
   }).join('') || '<div class="empty">No trade ideas pass the filters right now. That is normal on quiet news days.</div>';
 }
 
 radar.getSettings().then((s) => { settingsCache = s; if (data) renderTrades(); });
+
+// ---------- paper trading ----------
+const LWC = window.LightweightCharts;
+const pt = { sym: 'SPY', tf: '5m', side: 'buy', chart: null, candle: null, vol: null, lines: [], bars: [], acct: null, quotes: {}, tab: 'pos', eqChart: null, eqLine: null, loading: 0 };
+const TF_SEC = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600 };
+
+function cssVar(n) {
+  return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+}
+
+function ensureChart() {
+  if (pt.chart || !LWC) return;
+  const el = $('#ptChart');
+  pt.chart = LWC.createChart(el, {
+    autoSize: true,
+    layout: { background: { color: 'transparent' }, textColor: cssVar('--muted'), fontSize: 11 },
+    grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
+    timeScale: { timeVisible: true, secondsVisible: false, borderColor: cssVar('--line') },
+    rightPriceScale: { borderColor: cssVar('--line') },
+    crosshair: { mode: LWC.CrosshairMode.Normal },
+  });
+  pt.candle = pt.chart.addCandlestickSeries({
+    upColor: cssVar('--up'), downColor: cssVar('--down'), borderVisible: false, wickUpColor: cssVar('--up'), wickDownColor: cssVar('--down'),
+  });
+  pt.vol = pt.chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '', color: 'rgba(120,140,160,0.35)' });
+  pt.vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  // Click the chart to set the limit/stop price.
+  pt.chart.subscribeClick((p) => {
+    if (!p.point) return;
+    const price = pt.candle.coordinateToPrice(p.point.y);
+    if (price == null) return;
+    if ($('#ptType').value === 'market') $('#ptType').value = 'limit';
+    $('#ptPrice').value = price.toFixed(2);
+    syncTicket();
+  });
+}
+
+async function loadCandles() {
+  ensureChart();
+  const seq = ++pt.loading;
+  try {
+    const { bars } = await radar.paper.candles(pt.sym, pt.tf);
+    if (seq !== pt.loading) return;
+    pt.bars = bars;
+    pt.candle.setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+    pt.vol.setData(bars.map((b) => ({ time: b.time, value: b.volume, color: b.close >= b.open ? 'rgba(34,197,94,0.3)' : 'rgba(240,82,82,0.3)' })));
+    pt.chart.timeScale().fitContent();
+    if (bars.length > 150 && TF_SEC[pt.tf]) pt.chart.timeScale().setVisibleLogicalRange({ from: bars.length - 150, to: bars.length + 5 });
+    drawLines();
+  } catch (e) {
+    $('#ptMsg').innerHTML = `<span class="msg-err">Chart data unavailable for ${esc(pt.sym)}.</span>`;
+  }
+}
+
+// New York clock written as UTC seconds (matches the candle timestamps).
+function nowEtAsUtc() {
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()) / 1000;
+}
+
+// Stream the live price into the last candle.
+function liveCandle(q) {
+  if (!pt.candle || !pt.bars.length || !q) return;
+  const price = pt.acct?.marketOpen ? q.last : q.ext?.last || q.last;
+  const last = pt.bars.at(-1);
+  const span = TF_SEC[pt.tf];
+  if (span) {
+    const bucket = nowEtAsUtc() - (nowEtAsUtc() % span);
+    if (bucket > last.time) {
+      if (!pt.acct?.marketOpen && !q.ext) return; // nothing trading right now
+      const b = { time: bucket, open: last.close, high: Math.max(last.close, price), low: Math.min(last.close, price), close: price, volume: 0 };
+      pt.bars.push(b);
+      pt.candle.update(b);
+      return;
+    }
+  }
+  if (!pt.acct?.marketOpen && !span) return; // daily/weekly bars only move in regular hours
+  last.close = price;
+  last.high = Math.max(last.high, price);
+  last.low = Math.min(last.low, price);
+  pt.candle.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: last.close });
+}
+
+function drawLines() {
+  if (!pt.candle) return;
+  for (const l of pt.lines) pt.candle.removePriceLine(l);
+  pt.lines = [];
+  const a = pt.acct;
+  if (!a) return;
+  const add = (price, color, title, style = 2) => price && pt.lines.push(pt.candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
+  const pos = a.positions.find((p) => p.symbol === pt.sym);
+  if (pos) add(pos.avg, cssVar('--accent'), `${pos.qty > 0 ? 'Long' : 'Short'} ${Math.abs(pos.qty)} @ avg`, 0);
+  for (const o of a.orders.filter((o) => o.symbol === pt.sym)) {
+    const color = o.role === 'stop' ? cssVar('--down') : o.role === 'target' ? cssVar('--up') : cssVar('--warn');
+    const title = o.role === 'stop' ? 'Stop-loss' : o.role === 'target' ? 'Take-profit' : `${o.side === 'buy' ? 'Buy' : 'Sell'} ${o.type} ${o.qty}`;
+    if (o.price) add(o.price, color, title);
+  }
+  // Preview the ticket's stop-loss / take-profit before the order is placed.
+  if ($('#ptUseSL').checked && +$('#ptSL').value) add(+$('#ptSL').value, 'rgba(240,82,82,0.5)', 'SL (preview)', 3);
+  if ($('#ptUseTP').checked && +$('#ptTP').value) add(+$('#ptTP').value, 'rgba(34,197,94,0.5)', 'TP (preview)', 3);
+}
+
+function renderQuoteHead() {
+  const q = pt.quotes[pt.sym];
+  if (!q) return ($('#ptQuote').innerHTML = `<span class="muted">Loading ${esc(pt.sym)}…</span>`);
+  $('#ptQuote').innerHTML = `<span class="muted">${esc(q.name || '')}</span><b>${money(q.last)}</b><span class="${cls(q.changePct)}">${pct(q.changePct, 2)}</span>
+    ${q.ext ? `<span class="muted small">${q.ext.type === 'PRE_MKT' ? 'Pre-market' : 'After hours'} <b class="${cls(q.ext.changePct)}" style="font-size:13px">${money(q.ext.last)}</b></span>` : ''}`;
+}
+
+function renderAcct() {
+  const a = pt.acct;
+  if (!a) return;
+  const st = (label, val, c = '') => `<div class="stat"><span>${label}</span><b class="${c}">${val}</b></div>`;
+  const usd = (x) => `${x < 0 ? '−' : ''}$${Math.abs(x).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  $('#ptAcct').innerHTML = st('Equity', usd(a.equity)) + st('Cash', usd(a.cash)) + st('Buying power', usd(a.buyingPower)) +
+    st('Open P&L', usd(a.unrealized), cls(a.unrealized)) + st('Total P&L', `${usd(a.totalPnl)} (${pct(a.totalPct, 2)})`, cls(a.totalPnl)) +
+    st('Closed trades', a.closedTrades ? `${a.closedTrades} · ${a.winRate.toFixed(0)}% won` : '0') +
+    `<div class="mkt"><span><i class="dotlive" style="background:${a.marketOpen ? 'var(--up)' : 'var(--muted)'}"></i>${a.marketOpen ? 'Market open: orders fill live' : 'Market closed: orders fill at the next open'}</span>
+     <button class="btn ghost" id="ptReset">Reset account</button></div>`;
+}
+
+function renderTabs() {
+  const a = pt.acct;
+  if (!a) return;
+  $('#ptEqChart').classList.toggle('hidden', pt.tab !== 'eq');
+  const bracketOf = (sym, role) => a.orders.find((o) => o.symbol === sym && o.role === role)?.price;
+  let html = '';
+  if (pt.tab === 'pos') {
+    html = a.positions.length ? `<table class="mini"><tr><th>Symbol</th><th>Side</th><th>Shares</th><th>Avg price</th><th>Last</th><th>Value</th><th>P&L</th><th>Stop-loss</th><th>Take-profit</th><th></th></tr>
+      ${a.positions.map((p) => `<tr class="clk" data-ptsym="${esc(p.symbol)}"><td><b>${esc(p.symbol)}</b>${p.note ? `<div class="muted small">${esc(p.note)}</div>` : ''}</td>
+        <td class="${p.qty > 0 ? 'up' : 'down'}">${p.qty > 0 ? 'Long' : 'Short'}</td><td>${Math.abs(p.qty)}</td><td>${money(p.avg)}</td><td>${money(p.last)}</td>
+        <td>${money(Math.abs(p.value))}</td><td class="${cls(p.pnl)}">${p.pnl >= 0 ? '+' : '−'}$${Math.abs(p.pnl).toFixed(2)} (${pct(p.pnlPct)})</td>
+        <td>${bracketOf(p.symbol, 'stop') ? money(bracketOf(p.symbol, 'stop')) : '—'}</td><td>${bracketOf(p.symbol, 'target') ? money(bracketOf(p.symbol, 'target')) : '—'}</td>
+        <td><button class="x" data-ptclose="${esc(p.symbol)}">Close</button></td></tr>`).join('')}</table>`
+      : '<div class="empty">No open positions. Place an order with the ticket, or click "Paper trade this" on a Trade idea.</div>';
+  } else if (pt.tab === 'ord') {
+    html = a.orders.length ? `<table class="mini"><tr><th>#</th><th>Symbol</th><th>Side</th><th>Type</th><th>Shares</th><th>Price</th><th>Role</th><th>Placed</th><th></th></tr>
+      ${a.orders.map((o) => `<tr class="clk" data-ptsym="${esc(o.symbol)}"><td>${o.id}</td><td><b>${esc(o.symbol)}</b></td><td class="${o.side === 'buy' ? 'up' : 'down'}">${o.side}</td><td>${o.type}</td><td>${o.qty}</td>
+        <td>${o.price ? money(o.price) : 'market'}</td><td>${{ entry: 'Entry', stop: 'Stop-loss', target: 'Take-profit' }[o.role]}${o.stopLoss || o.takeProfit ? ' + bracket' : ''}</td>
+        <td>${new Date(o.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td><td><button class="x" data-ptcancel="${o.id}">Cancel</button></td></tr>`).join('')}</table>`
+      : '<div class="empty">No working orders.</div>';
+  } else if (pt.tab === 'hist') {
+    html = a.fills.length ? `<table class="mini"><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Shares</th><th>Price</th><th>Type</th><th>Realized P&L</th></tr>
+      ${a.fills.map((f) => `<tr><td>${new Date(f.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td><td><b>${esc(f.symbol)}</b></td>
+        <td class="${f.side === 'buy' ? 'up' : 'down'}">${f.side}</td><td>${f.qty}</td><td>${money(f.price)}</td><td>${{ entry: 'Entry', stop: 'Stop-loss hit', target: 'Take-profit hit' }[f.role] || f.role}</td>
+        <td class="${cls(f.pnl)}">${f.pnl != null ? `${f.pnl >= 0 ? '+' : '−'}$${Math.abs(f.pnl).toFixed(2)}` : '—'}</td></tr>`).join('')}</table>`
+      : '<div class="empty">No fills yet.</div>';
+  } else if (pt.tab === 'eq') {
+    html = a.equityCurve.length < 2 ? '<div class="empty">The equity curve fills in while the market is open.</div>' : '';
+    if (!pt.eqChart && LWC) {
+      pt.eqChart = LWC.createChart($('#ptEqChart'), { autoSize: true, layout: { background: { color: 'transparent' }, textColor: cssVar('--muted'), fontSize: 11 },
+        grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(255,255,255,0.04)' } }, timeScale: { timeVisible: true } });
+      pt.eqLine = pt.eqChart.addAreaSeries({ lineColor: cssVar('--accent'), topColor: 'rgba(79,156,249,0.25)', bottomColor: 'rgba(79,156,249,0)', lineWidth: 2 });
+    }
+    if (pt.eqLine) {
+      const pts = [];
+      for (const p of a.equityCurve) {
+        const t = Math.floor(p.t / 1000);
+        if (!pts.length || t > pts.at(-1).time) pts.push({ time: t, value: p.v });
+      }
+      pt.eqLine.setData(pts);
+    }
+  }
+  $('#ptTabBody').innerHTML = html;
+}
+
+function syncTicket() {
+  const type = $('#ptType').value;
+  $('#ptPriceRow').classList.toggle('hidden', type === 'market');
+  $('#ptSL').classList.toggle('hidden', !$('#ptUseSL').checked);
+  $('#ptTP').classList.toggle('hidden', !$('#ptUseTP').checked);
+  $$('.pt-side button').forEach((b) => b.classList.toggle('on', b.dataset.side === pt.side));
+  const btn = $('#ptSubmit');
+  btn.className = `btn pt-submit ${pt.side}`;
+  const qty = Math.floor(+$('#ptQty').value || 0);
+  const q = pt.quotes[pt.sym];
+  // While closed, a market order fills at the open, so estimate with the pre/after-market price.
+  const px = type === 'market' ? (!pt.acct?.marketOpen && q?.ext?.last) || q?.last : +$('#ptPrice').value;
+  btn.textContent = `${pt.side === 'buy' ? 'Buy' : 'Sell'} ${qty || ''} ${pt.sym} ${type === 'market' ? 'at market' : type === 'limit' ? `limit ${px ? money(px) : ''}` : `stop ${px ? money(px) : ''}`}`;
+  let est = '';
+  if (px && qty) {
+    est += `Order value: <b>$${(px * qty).toLocaleString(undefined, { maximumFractionDigits: 0 })}</b>`;
+    const sl = $('#ptUseSL').checked ? +$('#ptSL').value : 0;
+    const tp = $('#ptUseTP').checked ? +$('#ptTP').value : 0;
+    if (sl) est += `<br>Risk if stopped: <b class="down">$${(Math.abs(px - sl) * qty).toFixed(0)}</b>`;
+    if (tp) est += `<br>Profit at target: <b class="up">$${(Math.abs(tp - px) * qty).toFixed(0)}</b>`;
+    if (sl && tp) est += `<br>Reward : risk = <b>${(Math.abs(tp - px) / Math.abs(px - sl)).toFixed(1)} : 1</b>`;
+    if (pt.acct) est += `<br>Buying power: $${pt.acct.buyingPower.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  }
+  $('#ptEst').innerHTML = est || 'Enter shares to see the order value and risk.';
+  drawLines();
+}
+
+async function ptSetSymbol(sym) {
+  sym = String(sym || '').toUpperCase().trim();
+  if (!sym) return;
+  pt.sym = sym;
+  $('#ptSym').value = sym;
+  const d = await radar.paper.watch([sym]);
+  applyPaper(d);
+  loadCandles();
+}
+
+function applyPaper(d) {
+  if (!d) return;
+  pt.acct = d.account;
+  pt.quotes = d.quotes || pt.quotes;
+  if (!$('#view-paper').classList.contains('hidden')) {
+    renderAcct();
+    renderQuoteHead();
+    renderTabs();
+    liveCandle(pt.quotes[pt.sym]);
+    drawLines();
+    syncTicket();
+  }
+}
+
+// Open the paper-trading page with a ticket filled in (used by Trade ideas and Lookup).
+function openPaper(prefill = {}) {
+  showView('paper');
+  pt.side = prefill.side || 'buy';
+  $('#ptType').value = prefill.type || 'market';
+  if (prefill.price) $('#ptPrice').value = prefill.price.toFixed(2);
+  if (prefill.qty) $('#ptQty').value = prefill.qty;
+  $('#ptUseSL').checked = !!prefill.stopLoss;
+  $('#ptSL').value = prefill.stopLoss ? prefill.stopLoss.toFixed(2) : '';
+  $('#ptUseTP').checked = !!prefill.takeProfit;
+  $('#ptTP').value = prefill.takeProfit ? prefill.takeProfit.toFixed(2) : '';
+  pt.note = prefill.note || '';
+  $('#ptMsg').innerHTML = prefill.note ? `<span class="muted">Loaded from Trade ideas: ${esc(prefill.note)}. Check the levels, then place the order.</span>` : '';
+  ptSetSymbol(prefill.symbol || pt.sym);
+}
+
+$('#ptSym').addEventListener('keydown', (e) => e.key === 'Enter' && ptSetSymbol(e.target.value));
+$('#ptSym').addEventListener('change', (e) => ptSetSymbol(e.target.value));
+$('#ptTf').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  pt.tf = b.dataset.tf;
+  $$('#ptTf button').forEach((x) => x.classList.toggle('on', x === b));
+  loadCandles();
+});
+$('#ptTabs').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  pt.tab = b.dataset.t;
+  $$('#ptTabs button').forEach((x) => x.classList.toggle('on', x === b));
+  renderTabs();
+});
+$('.pt-side').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b) { pt.side = b.dataset.side; syncTicket(); }
+});
+['#ptType', '#ptPrice', '#ptQty', '#ptUseSL', '#ptSL', '#ptUseTP', '#ptTP'].forEach((id) => $(id).addEventListener('input', syncTicket));
+['#ptUseSL', '#ptUseTP', '#ptType'].forEach((id) => $(id).addEventListener('change', syncTicket));
+
+$('#ptSubmit').addEventListener('click', async () => {
+  const msg = $('#ptMsg');
+  try {
+    const d = await radar.paper.order({
+      symbol: pt.sym, side: pt.side, qty: +$('#ptQty').value, type: $('#ptType').value, price: +$('#ptPrice').value || null,
+      stopLoss: $('#ptUseSL').checked ? +$('#ptSL').value || null : null,
+      takeProfit: $('#ptUseTP').checked ? +$('#ptTP').value || null : null, note: pt.note || '',
+    });
+    pt.note = '';
+    applyPaper(d);
+    const filled = d.account.fills[0];
+    msg.innerHTML = d.account.marketOpen && filled && Date.now() - filled.at < 5000 && filled.symbol === pt.sym
+      ? `<span class="msg-ok">Filled: ${filled.side} ${filled.qty} ${esc(filled.symbol)} at ${money(filled.price)}</span>`
+      : `<span class="msg-ok">Order placed. ${d.account.marketOpen ? 'It fills when the price reaches your level.' : 'The market is closed, so it will fill at the open.'}</span>`;
+  } catch (err) {
+    msg.innerHTML = `<span class="msg-err">${esc(String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))}</span>`;
+  }
+});
+
+document.addEventListener('click', async (e) => {
+  const c = e.target.closest('[data-ptclose]');
+  const x = e.target.closest('[data-ptcancel]');
+  const r = e.target.closest('#ptReset');
+  const s = e.target.closest('[data-ptsym]');
+  const idea = e.target.closest('[data-papertrade]');
+  try {
+    if (c) { e.stopPropagation(); applyPaper(await radar.paper.close(c.dataset.ptclose)); return; }
+    if (x) { e.stopPropagation(); applyPaper(await radar.paper.cancel(+x.dataset.ptcancel)); return; }
+    if (r) {
+      const cash = prompt('Reset the paper account? This clears all positions, orders and history.\n\nStarting cash ($):', String(settingsCache?.accountSize || 10000));
+      if (cash) applyPaper(await radar.paper.reset(+cash));
+      return;
+    }
+    if (idea) {
+      const t = (data.trades || []).find((x) => x.symbol === idea.dataset.papertrade);
+      if (!t) return;
+      const s2 = settingsCache || { accountSize: 10000, riskPct: 1 };
+      const shares = Math.max(1, Math.floor(((s2.accountSize * s2.riskPct) / 100) / Math.abs(t.entry - t.stop)));
+      openPaper({ symbol: t.symbol, side: t.dir === 'up' ? 'buy' : 'sell', qty: shares, type: 'market', stopLoss: t.stop, takeProfit: t.target, note: `${t.catalyst} (${t.horizon})` });
+      return;
+    }
+    if (s) ptSetSymbol(s.dataset.ptsym);
+  } catch (err) {
+    $('#ptMsg').innerHTML = `<span class="msg-err">${esc(String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))}</span>`;
+  }
+});
+
+radar.paper.onUpdate(applyPaper);

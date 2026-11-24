@@ -7,6 +7,8 @@ const { scan } = require('./engine/scanner');
 const { search, lookup } = require('./engine/lookup');
 const tracker = require('./engine/tracker');
 const { setCacheDir } = require('./engine/universe');
+const { PaperAccount, marketOpen } = require('./engine/paper');
+const { quotes, candles } = require('./engine/quotes');
 
 const DEFAULTS = {
   watchlist: ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'AMD', 'GOOGL'],
@@ -37,6 +39,30 @@ let lastScan = null;
 let scanning = false;
 let timer = null;
 let trackCache = { at: 0, data: null };
+let paper;
+let paperWatch = []; // symbols the paper-trading screen is showing
+let lastQuotes = {};
+
+// Live price loop: every 3 s while the market is open (20 s when closed), price every
+// symbol with a position, working order or open chart, then fill whatever triggered.
+async function paperLoop() {
+  try {
+    const syms = [...new Set([...paper.symbols(), ...paperWatch])];
+    if (syms.length) {
+      lastQuotes = { ...lastQuotes, ...(await quotes(syms)) };
+      paper.tick(lastQuotes);
+    }
+    win?.webContents.send('paper:update', { account: paper.summary(), quotes: lastQuotes });
+  } catch {}
+  setTimeout(paperLoop, marketOpen() ? 3000 : 20000);
+}
+
+const paperDo = (fn) => {
+  fn();
+  const out = { account: paper.summary(), quotes: lastQuotes };
+  win?.webContents.send('paper:update', out);
+  return out;
+};
 
 // Track-record evaluation re-downloads price history, so cache it for a few hours.
 async function trackRecord(force = false) {
@@ -142,6 +168,26 @@ function start(launcher) {
   ipcMain.handle('stock:search', (_e, q) => search(q));
   ipcMain.handle('stock:lookup', (_e, sym) => lookup(sym, lastScan));
   ipcMain.handle('track:get', () => trackRecord(true));
+  ipcMain.handle('paper:get', () => ({ account: paper.summary(), quotes: lastQuotes }));
+  ipcMain.handle('paper:watch', async (_e, syms) => {
+    paperWatch = (syms || []).map((x) => String(x).toUpperCase()).slice(0, 10);
+    if (paperWatch.length) {
+      lastQuotes = { ...lastQuotes, ...(await quotes(paperWatch).catch(() => ({}))) };
+      paper.tick(lastQuotes);
+    }
+    return { account: paper.summary(), quotes: lastQuotes };
+  });
+  ipcMain.handle('paper:candles', (_e, sym, tf) => candles(sym, tf));
+  ipcMain.handle('paper:order', async (_e, o) => {
+    // Make sure we have a fresh price before accepting the order.
+    lastQuotes = { ...lastQuotes, ...(await quotes([o.symbol]).catch(() => ({}))) };
+    paper.tick(lastQuotes);
+    return paperDo(() => paper.place(o));
+  });
+  ipcMain.handle('paper:cancel', (_e, id) => paperDo(() => paper.cancel(id)));
+  ipcMain.handle('paper:close', (_e, sym) => paperDo(() => paper.close(sym)));
+  ipcMain.handle('paper:bracket', (_e, sym, b) => paperDo(() => paper.modifyBracket(sym, b)));
+  ipcMain.handle('paper:reset', (_e, cash) => paperDo(() => paper.reset(Number(cash) || settings.accountSize || 10000)));
   ipcMain.handle('guide:get', () => fs.readFileSync(path.join(__dirname, 'RESEARCH.md'), 'utf8'));
   ipcMain.handle('open:external', (_e, url) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
@@ -152,8 +198,10 @@ function start(launcher) {
   for (const c of [...(lastScan?.bullish || []), ...(lastScan?.bearish || []), ...(lastScan?.watchlist || [])]) {
     if (c.confidence === 'High' || (c.onWatch && Math.abs(c.newsScore) >= 3)) notified.add(`${c.symbol}:${Math.sign(c.composite)}`);
   }
+  paper = new PaperAccount(path.join(dataDir(), 'paper-account.json'), settings.accountSize || 10000);
   createWindow(launcher);
   schedule();
+  paperLoop();
   // Warm the track-record cache in the background so trade ideas can show measured win rates.
   trackRecord().then(() => {
     if (lastScan) {
