@@ -24,7 +24,8 @@ Download the latest installer from **https://github.com/Jdog1234/market-radar/re
 | Windows 64-bit | `Market-Radar-Setup-<version>-x64.exe` |
 
 The app isn't code-signed, so the first launch shows a warning:
-- **Mac:** right-click the app → **Open** → **Open**. If it's still blocked, go to System Settings → Privacy & Security → **Open Anyway**.
+- **Mac:** open the app once. When macOS says it can't verify the app, click **Done**, then go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to Market Radar. You only do this once.
+  If an older download says the app **"is damaged"**, run `xattr -cr "/Applications/Market Radar.app"` in Terminal, then open it again.
 - **Windows:** SmartScreen says "Windows protected your PC". Click **More info** → **Run anyway**.
 
 ## Automatic updates
