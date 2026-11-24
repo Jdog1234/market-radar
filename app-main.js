@@ -514,6 +514,16 @@ function start(launcher) {
     if (!hits.length) throw new Error('No real example in the data yet');
     return patterns.windowFor(dataset, pick(hits.slice(-60)), 30, 10);
   });
+  // A random stretch of real daily bars (stock hidden until the end) for the school's trend
+  // drill and trade replay: `before` bars to study, then `after` bars to play forward.
+  ipcMain.handle('learn:replay', async (_e, { before = 60, after = 25 } = {}) => {
+    const { dataset } = await ensureLearn();
+    const syms = Object.keys(dataset).filter((s) => dataset[s].length >= before + after + 30);
+    const sym = pick(syms);
+    const bars = dataset[sym];
+    const end = 20 + before + Math.floor(Math.random() * (bars.length - before - after - 20));
+    return { symbol: sym, bars: bars.slice(end - before, end), future: bars.slice(end, end + after), atr: patterns.atr(bars, end), date: bars[end - 1].time * 1000 };
+  });
   ipcMain.handle('guide:get', () => fs.readFileSync(path.join(__dirname, 'RESEARCH.md'), 'utf8'));
   ipcMain.handle('open:external', (_e, url) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);

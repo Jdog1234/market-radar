@@ -47,6 +47,8 @@ window.SCHOOL = [
 <tr><td><b>Stop-limit</b></td><td>Becomes a limit order at your level</td><td>May not fill at all in a fast drop</td></tr></table>
 <p>A <b>stop-loss</b> is a stop order placed to get you out if the trade goes wrong. A <b>take-profit</b> is a limit order to exit at your target. Placed together after an entry they form a <b>bracket</b>: when one fills, the other is cancelled (one-cancels-other, OCO).</p>
 <p>In the <a data-goto="paper">Trading screen</a> you can place all of these, see them as lines on the chart and drag them to new prices.</p>
+<div class="wg" data-widget="orders"></div>
+<div class="wg" data-widget="mission" data-ids="market,bracket"></div>
 <div class="key"><b>Key points</b>Market = certainty of filling; limit = certainty of price. Stops protect you but don't guarantee a price. Use brackets so every trade has a planned exit.</div>`,
       },
     ],
@@ -70,6 +72,7 @@ window.SCHOOL = [
 <ul><li><b>Open</b> and <b>close</b> form the thick <b>body</b>. Green (or hollow) means it closed higher than it opened; red means it closed lower.</li><li><b>High</b> and <b>low</b> are the ends of the thin lines, called <b>shadows</b> or <b>wicks</b>.</li></ul>
 <p>Read a candle as a story of the battle between buyers and sellers. A long lower shadow means sellers pushed price down but buyers pushed it back. A long green body with tiny shadows means buyers controlled the whole period. A tiny body means neither side won.</p>
 <p>The <a data-goto="patterns">Pattern library</a> shows the classic one-, two- and three-candle patterns, and <a data-goto="puzzles">Candle puzzles</a> lets you practise spotting them on real charts.</p>
+<div class="wg" data-widget="candle"></div>
 <div class="key"><b>Key points</b>Body = open to close; shadows = high and low. Long shadows show rejection; long bodies show control; tiny bodies show indecision.</div>`,
       },
       {
@@ -91,6 +94,7 @@ window.SCHOOL = [
 <p>A simple way to see the trend is a moving average. If price is above a rising 50-day average, the medium-term trend is up. Many traders only buy stocks in uptrends and only short stocks in downtrends.</p>
 <p>Trends tend to persist more often than they reverse; this is the "momentum" effect, one of the best-documented findings in finance. That's why "the trend is your friend" is a cliché: buying a falling stock because it "looks cheap" fights the odds.</p>
 <p>Trends end too. Warning signs: a failed new high, a break of the last higher low, or a big reversal candle on heavy volume at a key level.</p>
+<div class="wg" data-widget="trend"></div>
 <div class="key"><b>Key points</b>Uptrend = higher highs and higher lows. Trade with the trend more than against it. A broken higher low is the first sign an uptrend may be ending.</div>`,
       },
       {
@@ -108,6 +112,71 @@ window.SCHOOL = [
       { q: 'A stock breaks above resistance at $80 and later pulls back to $80. What often happens?', options: ['$80 acts as support', 'It must fall to zero', 'Resistance always holds forever', 'The stock is delisted'], answer: 0, why: 'Broken resistance often turns into support: the role-reversal idea.' },
       { q: 'You swing trade, holding for days to weeks. Which chart is your main one?', options: ['1-minute', 'Daily', 'Monthly', 'Tick chart'], answer: 1, why: 'Swing traders mostly use daily charts and check the weekly for the bigger trend.' },
       { q: 'Why check a higher timeframe before entering?', options: ['To find the bigger trend and key levels', 'Because lower timeframes are illegal', 'To get better dividends', 'It isn\'t useful'], answer: 0, why: 'Top-down analysis shows the trend and levels your trade is operating inside.' },
+    ],
+  },
+  {
+    id: 'liquidity',
+    title: 'Liquidity and market mechanics',
+    summary: 'Order books, slippage, who is on the other side of your trade, gaps, halts and short squeezes.',
+    lessons: [
+      {
+        id: 'book',
+        title: 'Liquidity and the order book',
+        body: `<p><b>Liquidity</b> is how easily you can buy or sell without moving the price. A liquid stock has many buyers and sellers waiting at every price; an illiquid one has few.</p>
+<p>Those waiting orders form the <b>order book</b> (also called Level 2 or market depth): limit orders to buy (bids) stacked below the price, and limit orders to sell (asks) stacked above it. The best bid and best ask are the top of the book; the gap between them is the spread.</p>
+<p>When you send a <b>market order</b>, it takes shares from the book, starting at the best price. If your order is bigger than what's offered at the best price, it keeps going to the next level, and the next, each one worse. Try it:</p>
+<div class="wg" data-widget="orderbook" data-kind="liquid"></div>
+<p>Signs of a liquid stock: millions of shares traded per day, a spread of a cent or two, and deep size at each level. Large-caps and major ETFs (SPY, QQQ) are extremely liquid; small-caps, penny stocks and anything in pre-market often are not.</p>
+<div class="key"><b>Key points</b>Liquidity = how much size is waiting near the price. Market orders take from the book level by level. Stick to liquid stocks, especially as a beginner.</div>`,
+      },
+      {
+        id: 'slippage',
+        title: 'Slippage and market impact',
+        body: `<p><b>Slippage</b> is the difference between the price you expected and the price you got. It comes from three places: the spread, the price moving while your order travels, and your own order eating through the book (<b>market impact</b>). Switch the simulator to the thin stock:</p>
+<div class="wg" data-widget="orderbook" data-kind="thin"></div>
+<p>Ways to keep slippage low:</p>
+<ul><li><b>Use limit orders</b> when there's no rush. You set the worst price you'll accept.</li><li><b>Keep your size small relative to volume.</b> A rule of thumb: your order should be well under 1% of the stock's average daily volume.</li><li><b>Avoid the first minutes after the open</b> and thin pre-market or after-hours sessions, when spreads are widest.</li><li><b>Count slippage in your plan.</b> A 0.2% cost on every entry and exit adds up quickly if you trade often.</li></ul>
+<p>This is why the app's simulated account fills buys at the ask and sells at the bid, rather than at the "last price": it's closer to what really happens.</p>
+<div class="key"><b>Key points</b>Slippage = spread + price movement + your own impact. Limit orders, liquid stocks, sensible size and avoiding the most hectic minutes keep it down.</div>`,
+      },
+      {
+        id: 'others',
+        title: 'Who is on the other side of your trade',
+        body: `<p>Every trade needs a buyer and a seller. Knowing who they are explains a lot of price behaviour:</p>
+<table><tr><th>Participant</th><th>What they do</th><th>What it means for you</th></tr>
+<tr><td>Market makers</td><td>Constantly post bids and asks, earning the spread</td><td>They provide liquidity; spreads widen when they see risk</td></tr>
+<tr><td>High-frequency traders</td><td>Computers trading in microseconds</td><td>You can't outrun them, so don't try to scalp a cent or two</td></tr>
+<tr><td>Institutions (funds, pensions)</td><td>Buy and sell huge positions slowly over days, often around VWAP</td><td>Their steady buying is part of why news drifts for days</td></tr>
+<tr><td>Retail traders</td><td>Individuals like you</td><td>Often chase moves and news; crowds can push prices too far</td></tr></table>
+<p>In the US many retail orders are routed to wholesalers who pay brokers for them (<b>payment for order flow</b>), and some volume trades off-exchange in <b>dark pools</b>. You usually still get the quoted price or slightly better.</p>
+<p>The key lesson: the person selling to you may know more, or may simply be a fund trimming a position. A price only tells you where they agreed, never who was right.</p>
+<div class="key"><b>Key points</b>Market makers supply liquidity, institutions move slowly and drive trends, computers dominate the tiny moves. Trade timeframes where your analysis, not your speed, matters.</div>`,
+      },
+      {
+        id: 'gaps',
+        title: 'Volatility, gaps and trading halts',
+        body: `<p><b>Volatility</b> is how much a price moves. ATR (from the indicators module) measures it per stock; the VIX index measures the expected volatility of the whole S&P 500 and rises when markets are fearful.</p>
+<p>A <b>gap</b> is when a stock opens far from the previous close, usually after overnight news or earnings. Gaps can't be traded through: your stop fills at the first available price. That's the biggest single risk for swing traders, and why the order playground in module 1 shows a gap. Common gap types:</p>
+<ul><li><b>Breakaway gaps</b> on big news, often the start of a new trend.</li><li><b>Exhaustion gaps</b> after a long run, often near the end of it.</li><li><b>Common gaps</b> on no special news, often "filled" (the price returns to the previous close) within days.</li></ul>
+<p><b>Trading halts</b> pause trading in a stock. In the US the Limit Up–Limit Down (LULD) rules pause a stock for a few minutes if it moves too far too fast, and exchanges can halt a stock for pending news. Market-wide <b>circuit breakers</b> pause all trading if the S&P 500 falls 7% or 13% in a day, and close the market for the day at 20%.</p>
+<div class="key"><b>Key points</b>Volatility sets your stop distance and size. Gaps skip over stops. Halts can freeze you in a position, so keep size sensible in fast-moving stocks.</div>`,
+      },
+      {
+        id: 'shorts',
+        title: 'Short selling and squeezes',
+        body: `<p>To <b>short</b> a stock, your broker borrows shares for you to sell. You profit if you buy them back cheaper. Things to know:</p>
+<ul><li>You need a margin account, and the shares must be available to borrow. Hard-to-borrow stocks charge a <b>borrow fee</b>, sometimes very high.</li><li>A long position can lose at most 100%. A short has <b>no limit</b>: if a stock goes from $10 to $40, a short loses 300%.</li><li><b>Short interest</b> is the share of the tradable stock (float) that's sold short. <b>Days to cover</b> = shares short ÷ average daily volume.</li></ul>
+<p>When a heavily shorted stock rises sharply, short sellers rush to buy back to limit losses, and that buying pushes it higher still: a <b>short squeeze</b>. GameStop in January 2021 rose more than tenfold in weeks this way. High short interest is fuel, but it can stay high for months without any squeeze.</p>
+<p>Market Radar shows short interest in <a data-goto="lookup">Stock lookup</a> and treats a stock with very high short interest and good news as a possible squeeze candidate.</p>
+<div class="key"><b>Key points</b>Shorts have unlimited loss potential and borrow costs. High short interest plus a catalyst can cause squeezes. Never short a stock just because it "looks too high".</div>`,
+      },
+    ],
+    quiz: [
+      { q: 'What does liquidity mean?', options: ['How much a stock pays in dividends', 'How easily you can trade without moving the price', 'How old a company is', 'The number of employees'], answer: 1, why: 'Liquid stocks have lots of size waiting near the price, so trading barely moves it.' },
+      { q: 'Your market buy is bigger than the shares offered at the best ask. What happens?', options: ['It is cancelled', 'It fills at the next ask levels, each at a worse price', 'It waits until tomorrow', 'It fills at the bid'], answer: 1, why: 'A market order walks up the book level by level: that is market impact.' },
+      { q: 'Which is the best way to limit slippage in a thin stock?', options: ['Use a big market order', 'Use a limit order and a small size', 'Trade only in pre-market', 'Remove your stop'], answer: 1, why: 'A limit caps your price; small size avoids eating through the book.' },
+      { q: 'Your stop is at $45. The stock closes at $48 and opens at $40 after bad news. About where does the stop fill?', options: ['$45', 'Around $40', '$48', 'It never fills'], answer: 1, why: 'Gaps skip over stops; the stop becomes a market order at the open.' },
+      { q: 'What can trigger a short squeeze?', options: ['Low short interest and no news', 'High short interest and a sharp rise forcing shorts to buy back', 'A dividend payment', 'A stock split'], answer: 1, why: 'Shorts buying back to cover adds fuel to a rising price.' },
     ],
   },
   {
@@ -247,6 +316,8 @@ window.SCHOOL = [
 <p>Example: $10,000 account, 1% risk = $100. Buy at $50 with a stop at $48 ($2 risk per share). Shares = 100 ÷ 2 = <b>50 shares</b> ($2,500 position). If the stop hits you lose about $100, not your account.</p>
 <p>Notice the position is $2,500 even though you only risk $100. The stop distance, not your conviction, decides the size. A volatile stock with a wide stop gets fewer shares.</p>
 <p>The Trading screen does this for you: choose <b>Size by → Risk %</b>, set a stop-loss, and the share count is calculated.</p>
+<div class="wg" data-widget="sizer"></div>
+<div class="wg" data-widget="mission" data-ids="risk"></div>
 <div class="key"><b>Key points</b>Risk 1% per trade. Size = risk dollars ÷ distance to stop. Wider stop = fewer shares. Decide the loss first.</div>`,
       },
       {
@@ -260,6 +331,7 @@ window.SCHOOL = [
 <tr><td>70%</td><td>0.5 : 1</td><td>0.7×0.5 − 0.3×1 = <b>+0.05R</b></td></tr>
 <tr><td>30%</td><td>2 : 1</td><td>0.3×2 − 0.7×1 = <b>−0.1R</b></td></tr></table>
 <p>You don't need to be right most of the time. With 2:1 trades you only need to win more than 1 in 3 to come out ahead (before costs). That's why Market Radar's trade ideas use 2R targets and show the break-even win rate.</p>
+<div class="wg" data-widget="expectancy"></div>
 <div class="key"><b>Key points</b>Think in R. Expectancy, not win rate, decides profitability. With 2:1 reward-to-risk, break-even is about 33%.</div>`,
       },
       {
@@ -270,6 +342,7 @@ window.SCHOOL = [
 <p>Losing streaks are normal. Even a solid 50%-win-rate strategy will have runs of 6–8 losses in a row over a few hundred trades. At 1% risk, eight losses cost about 8%. At 10% risk they cost more than half your account.</p>
 <p>Rules that protect you:</p>
 <ul><li>Always use a stop, and never move it further away.</li><li>Set a daily or weekly loss limit (for example 3% of the account) and stop trading when you hit it.</li><li>Avoid holding through earnings at full size.</li><li>Be careful with leverage and shorts; both can lose more than you expect.</li></ul>
+<div class="wg" data-widget="drawdown"></div>
 <div class="key"><b>Key points</b>A 50% loss needs a 100% gain to recover. Losing streaks are guaranteed; small risk per trade is what lets you survive them.</div>`,
       },
     ],
@@ -293,6 +366,8 @@ window.SCHOOL = [
 <ol><li><b>Why?</b> The setup: what news, pattern or level gives you an edge.</li><li><b>Entry:</b> the price or trigger (for example a break of the morning high).</li><li><b>Stop:</b> where you're proven wrong, usually beyond a level or about 1.5 ATR.</li><li><b>Target:</b> where you'll take profit, ideally 2R or more.</li><li><b>Size:</b> from the 1% rule.</li><li><b>Time:</b> how long you'll give it before exiting anyway.</li></ol>
 <p>Market Radar's <a data-goto="trades">Trade ideas</a> follow exactly this structure. Click <b>Trade this</b> and the plan loads into the order panel, including the bracket.</p>
 <p>Don't chase. If a stock gaps far beyond your entry, the reward-to-risk is gone; let it go. There is always another trade.</p>
+<p>Now try it. The demo below shows a real chart up to "today". Decide: long, short or skip. Your stop and target are placed for you using ATR, then the next days play out.</p>
+<div class="wg" data-widget="replay"></div>
 <div class="key"><b>Key points</b>Why, entry, stop, target, size, time. If you can't write all six down, you don't have a trade yet.</div>`,
       },
       {
@@ -301,6 +376,7 @@ window.SCHOOL = [
         body: `<p>Pilots use checklists because good habits beat memory under pressure. A trading version:</p>
 <ul><li>☐ Is there a clear catalyst or setup?</li><li>☐ Does it agree with the higher-timeframe trend and the market's mood (SPY/QQQ)?</li><li>☐ Any earnings or big economic release before my time frame ends?</li><li>☐ Is the stop at a logical level, not just a random percentage?</li><li>☐ Is the reward at least 2× the risk?</li><li>☐ Is my size within 1% risk, and my total exposure sensible?</li><li>☐ Is the stock liquid, with a tight spread and good volume?</li><li>☐ Am I calm, or am I chasing, bored or trying to win back a loss?</li></ul>
 <p>Use <a data-goto="paper">alerts</a> (right-click the chart, or Alt+A) so price comes to you instead of you staring at the screen.</p>
+<div class="wg" data-widget="mission" data-ids="alert,protect"></div>
 <div class="key"><b>Key points</b>A checklist removes impulse trades. The last question, about your state of mind, matters as much as the chart.</div>`,
       },
       {

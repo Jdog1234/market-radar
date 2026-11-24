@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('radar', {
     stats: () => ipcRenderer.invoke('learn:stats'),
     puzzle: (opts) => ipcRenderer.invoke('learn:puzzle', opts),
     example: (id) => ipcRenderer.invoke('learn:example', id),
+    replay: (opts) => ipcRenderer.invoke('learn:replay', opts),
   },
   search: (q) => ipcRenderer.invoke('stock:search', q),
   lookup: (sym) => ipcRenderer.invoke('stock:lookup', sym),

@@ -456,11 +456,12 @@ function renderSchool() {
   const passed = S.filter((m) => pr.passed[m.id]).length;
   const pct = total ? Math.round(((read + passed) / (total + S.length)) * 100) : 0;
   if (sc.mod == null) {
-    $('#school').innerHTML = `<div class="sc-top"><div><h2>Trading school</h2><p class="muted small" style="max-width:640px;margin:4px 0 0">A complete course, from your first order to running a trading plan. Each module ends with a short quiz. Practise as you go in the Trading screen's simulated account; no real money needed.</p></div>
+    $('#school').innerHTML = `<div class="sc-top"><div><h2>Trading school</h2><p class="muted small" style="max-width:640px;margin:4px 0 0">A complete course, from your first order to running a trading plan. Lessons include hands-on simulators, real-chart drills, a trade replay demo and practice missions in the Trading screen's simulated account (fake money). Each module ends with a short quiz.</p></div>
       <div class="sc-prog"><div class="small"><b>${pct}%</b> complete · ${passed} of ${S.length} modules passed${passed === S.length && S.length ? ' 🎓' : ''}</div><div class="pz-xp"><i style="width:${pct}%"></i></div></div></div>
       <div class="sc-mods">${S.map((m, i) => {
         const r = m.lessons.filter((l) => pr.read[`${m.id}/${l.id}`]).length;
-        return `<div class="sc-mod" data-scmod="${i}"><div class="n">Module ${i + 1} · ${m.lessons.length} lessons + quiz</div><h3>${esc(m.title)}</h3><p>${esc(m.summary)}</p>
+        const tools = m.lessons.reduce((n, l) => n + (l.body.match(/data-widget=/g) || []).length, 0);
+        return `<div class="sc-mod" data-scmod="${i}"><div class="n">Module ${i + 1} · ${m.lessons.length} lessons${tools ? ` · ${tools} hands-on` : ''} + quiz</div><h3>${esc(m.title)}</h3><p>${esc(m.summary)}</p>
           ${pr.passed[m.id] ? '<div class="done">✓ Passed</div>' : `<div class="small muted">${r} of ${m.lessons.length} lessons read</div>`}</div>`;
       }).join('')}</div>
       <p class="small muted" style="margin-top:18px">Educational content, not financial advice. Trading involves risk of loss.</p>`;
@@ -484,6 +485,7 @@ function renderSchool() {
     sc.answers = {};
   }
   $('#school').innerHTML = `<div class="sc-layout"><nav class="sc-toc">${toc}</nav><article class="sc-lesson">${body}</article></div>`;
+  if (window.mountWidgets) mountWidgets($('#school'));
   $('#view-school').scrollTop = 0;
   document.querySelector('main')?.scrollTo?.(0, 0);
 }
