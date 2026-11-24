@@ -384,5 +384,5 @@ body.paper-mode .top, body.paper-mode .disclaimer { display: none; }
 .msg-ok { color: var(--up); }
 .msg-err { color: var(--down); }
 .btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
-@media (max-width: 1400px) { .tv-acct .opt { display: none; } }
+@media (max-width: 1500px) { .tv-acct .opt { display: none; } }
 @media (max-width: 1250px) { .tv-right { width: 250px; } }

@@ -1393,8 +1393,8 @@ function renderAcct() {
   const a = pt.acct;
   if (!a) return;
   const it = (label, val, c = '', opt = false) => `<span class="${opt ? 'opt' : ''}">${label}<b class="${c}">${val}</b></span>`;
-  $('#ptAcct').innerHTML = it('Equity', usd(a.equity)) + it('Buying power', usd(a.buyingPower), '', true) +
-    it('Open P&L', sgnUsd(a.unrealized), cls(a.unrealized)) + it('Total', `${sgnUsd(a.totalPnl)} (${pct(a.totalPct, 2)})`, cls(a.totalPnl));
+  $('#ptAcct').innerHTML = it('Equity', usd(a.equity)) + it('Open P&L', sgnUsd(a.unrealized), cls(a.unrealized)) +
+    it('Total', `${sgnUsd(a.totalPnl)} (${pct(a.totalPct, 2)})`, cls(a.totalPnl)) + it('Buying power', usd(a.buyingPower), '', true);
   const n = (t, k) => `${t}${k ? `<span class="n">${k}</span>` : ''}`;
   const labels = { pos: n('Positions', a.positions.length), ord: n('Orders', a.orders.length), hist: 'History', acct: 'Account' };
   $$('#ptTabs button').forEach((b) => (b.innerHTML = labels[b.dataset.t]));
@@ -1462,7 +1462,7 @@ function renderAcctTab() {
   if (pt.eqLine) {
     const pts = [];
     for (const p of a.equityCurve) {
-      const t = Math.floor(p.t / 1000);
+      const t = Math.floor((p.t - new Date(p.t).getTimezoneOffset() * 60e3) / 1000); // local clock on the axis
       if (!pts.length || t > pts.at(-1).time) pts.push({ time: t, value: p.v });
     }
     if (pts.length !== pt.eqLen) {
