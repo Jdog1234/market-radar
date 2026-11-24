@@ -1,4 +1,6 @@
-// Live quotes and chart candles for paper trading (CNBC's public quote and chart APIs).
+// Quotes and chart candles for paper trading (CNBC's public quote and chart APIs).
+// Live prices normally come from the Yahoo stream (engine/stream.js); these quotes are the
+// fallback when the stream is down, and the source of names / previous close / extended hours.
 const { get } = require('./http');
 const { num } = require('./universe');
 
@@ -13,11 +15,17 @@ async function quotes(symbols) {
     for (const q of d?.FormattedQuoteResult?.FormattedQuote || []) {
       if (!num(q.last)) continue;
       const ext = q.ExtendedMktQuote;
+      const bid = num(q.bid);
+      const ask = num(q.ask);
+      const status = String(q.curmktstatus || '');
       out[q.symbol] = {
         symbol: q.symbol, name: q.name, last: num(q.last), change: num(q.change), changePct: num(q.change_pct),
-        prevClose: num(q.previous_day_closing), volume: num(q.volume), status: q.curmktstatus,
+        prevClose: num(q.previous_day_closing), volume: num(q.volume), status,
+        // 'regular' only while the regular session is trading; otherwise `last` is the last close.
+        session: /REG/.test(status) ? 'regular' : /PRE/.test(status) ? 'pre' : /POST|AFTER/.test(status) ? 'post' : 'closed',
+        bid: bid > 0 ? bid : null, ask: ask > 0 ? ask : null, bidSize: num(q.bidsize ?? q.bid_size), askSize: num(q.asksize ?? q.ask_size),
         ext: ext && num(ext.last) ? { type: ext.type, last: num(ext.last), changePct: num(ext.change_pct), time: ext.last_time } : null,
-        at: Date.now(),
+        src: 'poll', at: Date.now(),
       };
     }
   }

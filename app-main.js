@@ -9,6 +9,7 @@ const tracker = require('./engine/tracker');
 const { setCacheDir } = require('./engine/universe');
 const { PaperAccount, marketOpen } = require('./engine/paper');
 const { quotes, candles } = require('./engine/quotes');
+const { YahooStream } = require('./engine/stream');
 
 const DEFAULTS = {
   watchlist: ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'AMD', 'GOOGL'],
@@ -40,27 +41,103 @@ let scanning = false;
 let timer = null;
 let trackCache = { at: 0, data: null };
 let paper;
-let paperWatch = []; // symbols the paper-trading screen is showing
+let paperWatch = []; // symbols the paper-trading screen is showing (chart + watchlist)
 let lastQuotes = {};
+const stream = new YahooStream();
 
-// Live price loop: every 3 s while the market is open (20 s when closed), price every
-// symbol with a position, working order or open chart, then fill whatever triggered.
+const send = (ch, d) => {
+  if (win && !win.isDestroyed()) win.webContents.send(ch, d);
+};
+const feed = () => ({ mode: stream.healthy() ? 'stream' : 'poll', connected: stream.connected, lastTickAt: stream.lastTickAt || null });
+const snapshot = () => ({ account: paper.summary(), quotes: lastQuotes, feed: feed() });
+
+// Account updates go out at most once a second (P&L moves with every tick), right away on a fill.
+let summaryTimer = null;
+let lastSummaryAt = 0;
+function pushUpdate(now = false) {
+  if (now || Date.now() - lastSummaryAt > 1000) {
+    clearTimeout(summaryTimer);
+    summaryTimer = null;
+    lastSummaryAt = Date.now();
+    send('paper:update', snapshot());
+  } else if (!summaryTimer) summaryTimer = setTimeout(() => pushUpdate(true), 1000 - (Date.now() - lastSummaryAt));
+}
+
+// Ticks go to the chart in small batches (every 100 ms) so a busy stream can't flood the UI.
+let pendingTicks = {};
+let tickTimer = null;
+function queueTick(sym) {
+  pendingTicks[sym] = lastQuotes[sym];
+  if (!tickTimer) {
+    tickTimer = setTimeout(() => {
+      tickTimer = null;
+      send('paper:tick', { quotes: pendingTicks, feed: feed() });
+      pendingTicks = {};
+    }, 100);
+  }
+}
+
+function streamSymbols() {
+  stream.setSymbols([...new Set([...paper.symbols(), ...paperWatch])].slice(0, 80));
+}
+
+// Live tick from the Yahoo stream → quote → order matching → UI.
+stream.on('tick', (t) => {
+  const prev = lastQuotes[t.symbol] || { symbol: t.symbol };
+  const q = { ...prev, symbol: t.symbol, src: 'stream', at: Date.now(), session: t.session, bid: t.bid, ask: t.ask, bidSize: t.bidSize, askSize: t.askSize };
+  if (t.session === 'regular') {
+    Object.assign(q, { last: t.price, ext: null, lastSize: t.lastSize, tradeTime: t.time });
+    if (t.changePct != null) q.changePct = t.changePct;
+    if (t.change != null) q.change = t.change;
+    if (t.volume) q.volume = t.volume;
+    if (t.dayHigh) q.dayHigh = t.dayHigh;
+    if (t.dayLow) q.dayLow = t.dayLow;
+  } else {
+    // Pre-market / after hours: `last` stays the regular-session close (like the CNBC quote).
+    q.ext = { type: t.session === 'pre' ? 'PRE_MKT' : 'POST_MKT', last: t.price, changePct: t.changePct, time: t.time };
+    if (!q.last) q.last = t.price;
+  }
+  lastQuotes[t.symbol] = q;
+  const fills = paper.s.fills.length;
+  paper.tick({ [t.symbol]: q });
+  queueTick(t.symbol);
+  const filled = paper.s.fills.length !== fills;
+  if (filled) streamSymbols();
+  if (filled || paper.s.positions[t.symbol] || paperWatch.includes(t.symbol)) pushUpdate(filled);
+});
+stream.on('status', () => pushUpdate(true));
+
+// A polled (CNBC) quote never overwrites a fresher streamed price; it still fills in names,
+// previous close and anything the stream hasn't sent.
+function mergePolled(fresh) {
+  for (const [sym, q] of Object.entries(fresh)) {
+    const prev = lastQuotes[sym];
+    if (prev?.src === 'stream' && Date.now() - prev.at < 15e3) lastQuotes[sym] = { ...prev, name: q.name, prevClose: q.prevClose, status: q.status };
+    else lastQuotes[sym] = { ...prev, ...q };
+  }
+}
+
+// Fallback / housekeeping loop. While the stream is healthy it only polls every 30 s (names,
+// quiet symbols); if the stream drops it polls every 3 s while the market is open (20 s closed).
 async function paperLoop() {
+  const streaming = stream.healthy();
   try {
+    streamSymbols();
     const syms = [...new Set([...paper.symbols(), ...paperWatch])];
     if (syms.length) {
-      lastQuotes = { ...lastQuotes, ...(await quotes(syms)) };
+      mergePolled(await quotes(syms));
       paper.tick(lastQuotes);
-    }
-    win?.webContents.send('paper:update', { account: paper.summary(), quotes: lastQuotes });
+    } else paper.tick({});
+    pushUpdate(true);
   } catch {}
-  setTimeout(paperLoop, marketOpen() ? 3000 : 20000);
+  setTimeout(paperLoop, streaming ? 30000 : marketOpen() ? 3000 : 20000);
 }
 
 const paperDo = (fn) => {
   fn();
-  const out = { account: paper.summary(), quotes: lastQuotes };
-  win?.webContents.send('paper:update', out);
+  streamSymbols();
+  const out = snapshot();
+  send('paper:update', out);
   return out;
 };
 
@@ -168,23 +245,31 @@ function start(launcher) {
   ipcMain.handle('stock:search', (_e, q) => search(q));
   ipcMain.handle('stock:lookup', (_e, sym) => lookup(sym, lastScan));
   ipcMain.handle('track:get', () => trackRecord(true));
-  ipcMain.handle('paper:get', () => ({ account: paper.summary(), quotes: lastQuotes }));
+  ipcMain.handle('paper:get', () => snapshot());
   ipcMain.handle('paper:watch', async (_e, syms) => {
-    paperWatch = (syms || []).map((x) => String(x).toUpperCase()).slice(0, 10);
-    if (paperWatch.length) {
-      lastQuotes = { ...lastQuotes, ...(await quotes(paperWatch).catch(() => ({}))) };
+    paperWatch = [...new Set((syms || []).map((x) => String(x).toUpperCase().trim()).filter(Boolean))].slice(0, 60);
+    streamSymbols();
+    // Names, previous close and a first price for anything we haven't seen yet.
+    const missing = paperWatch.filter((x) => !lastQuotes[x]?.name);
+    if (missing.length) {
+      mergePolled(await quotes(missing).catch(() => ({})));
       paper.tick(lastQuotes);
     }
-    return { account: paper.summary(), quotes: lastQuotes };
+    return snapshot();
   });
   ipcMain.handle('paper:candles', (_e, sym, tf) => candles(sym, tf));
   ipcMain.handle('paper:order', async (_e, o) => {
-    // Make sure we have a fresh price before accepting the order.
-    lastQuotes = { ...lastQuotes, ...(await quotes([o.symbol]).catch(() => ({}))) };
-    paper.tick(lastQuotes);
+    // Make sure we have a fresh price before accepting the order (the stream usually has one).
+    const sym = String(o?.symbol || '').toUpperCase();
+    const q = lastQuotes[sym];
+    if (!(q?.src === 'stream' && Date.now() - q.at < 5000)) {
+      mergePolled(await quotes([sym]).catch(() => ({})));
+      paper.tick(lastQuotes);
+    }
     return paperDo(() => paper.place(o));
   });
   ipcMain.handle('paper:cancel', (_e, id) => paperDo(() => paper.cancel(id)));
+  ipcMain.handle('paper:modify', (_e, id, changes) => paperDo(() => paper.modify(Number(id), changes || {})));
   ipcMain.handle('paper:close', (_e, sym) => paperDo(() => paper.close(sym)));
   ipcMain.handle('paper:bracket', (_e, sym, b) => paperDo(() => paper.modifyBracket(sym, b)));
   ipcMain.handle('paper:reset', (_e, cash) => paperDo(() => paper.reset(Number(cash) || settings.accountSize || 10000)));

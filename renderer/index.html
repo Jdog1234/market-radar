@@ -116,43 +116,100 @@
       <div id="tradeList" class="trades"></div>
     </section>
 
-    <section id="view-paper" class="view hidden">
-      <div class="pt-acct" id="ptAcct"></div>
-      <div class="pt-main">
-        <div class="card pt-chartcard">
-          <div class="pt-head">
-            <input id="ptSym" type="search" placeholder="Symbol" autocomplete="off" spellcheck="false" />
-            <div id="ptQuote" class="pt-quote"></div>
-            <div class="chips pt-tf" id="ptTf">
-              <button data-tf="1m">1m</button><button data-tf="5m" class="on">5m</button><button data-tf="15m">15m</button>
-              <button data-tf="1h">1h</button><button data-tf="D">1D</button><button data-tf="W">1W</button>
+    <section id="view-paper" class="view tv hidden">
+      <div class="tv-top">
+        <div class="tv-symwrap">
+          <input id="ptSym" type="search" placeholder="Symbol" autocomplete="off" spellcheck="false" />
+          <div id="ptSuggest" class="suggest hidden"></div>
+        </div>
+        <div id="ptQuote" class="pt-quote"></div>
+        <div class="tv-sep"></div>
+        <div class="tv-group" id="ptTf">
+          <button data-tf="1m">1m</button><button data-tf="5m" class="on">5m</button><button data-tf="15m">15m</button>
+          <button data-tf="1h">1h</button><button data-tf="D">1D</button><button data-tf="W">1W</button>
+        </div>
+        <div class="tv-sep"></div>
+        <div class="tv-group" id="ptType2" title="Chart type">
+          <button data-ct="candles" class="on" title="Candles">Candles</button><button data-ct="bars" title="Bars">Bars</button><button data-ct="line" title="Line">Line</button>
+        </div>
+        <div class="tv-sep"></div>
+        <div class="tv-menuwrap">
+          <button id="ptIndBtn" class="tv-btn">ƒx Indicators ▾</button>
+          <div id="ptIndMenu" class="tv-menu hidden"></div>
+        </div>
+        <div class="tv-spacer"></div>
+        <div id="ptFeed" class="tv-feed"></div>
+        <div id="ptMkt" class="tv-feed"></div>
+      </div>
+      <div class="tv-body">
+        <div class="tv-draw" id="ptDrawBar">
+          <button data-tool="cursor" class="on" title="Cursor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 3v18M3 12h18"/></svg></button>
+          <button data-tool="hline" title="Horizontal line (click the chart)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 12h18"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg></button>
+          <button data-tool="trend" title="Trend line (click two points)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 19L19 5"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/></svg></button>
+          <div class="tv-draw-sep"></div>
+          <button data-tool="clear" title="Delete all drawings for this symbol"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button>
+        </div>
+        <div class="tv-center">
+          <div class="tv-chartwrap" id="ptChartWrap">
+            <div id="ptChart" class="tv-chart"></div>
+            <canvas id="ptDrawCanvas" class="tv-drawcanvas"></canvas>
+            <div id="ptOverlay" class="tv-overlay"></div>
+            <div class="tv-legend" id="ptLegend"></div>
+            <div class="tv-quick" id="ptQuick">
+              <button class="tv-q sell" data-quick="sell"><span>SELL</span><b id="ptBid">—</b></button>
+              <div class="tv-spread" id="ptSpread">—</div>
+              <button class="tv-q buy" data-quick="buy"><span>BUY</span><b id="ptAsk">—</b></button>
+            </div>
+            <div id="ptCtx" class="tv-menu tv-ctx hidden"></div>
+            <div id="ptToast" class="tv-toast hidden"></div>
+          </div>
+          <div class="tv-bottom" id="ptBottom">
+            <div class="tv-resize" id="ptResize"></div>
+            <div class="tv-bhead">
+              <b class="tv-btitle">Paper Trading</b>
+              <div class="tv-tabs" id="ptTabs">
+                <button data-t="pos" class="on">Positions</button><button data-t="ord">Orders</button>
+                <button data-t="hist">History</button><button data-t="acct">Account</button>
+              </div>
+              <div id="ptAcct" class="tv-acct"></div>
+              <button class="tv-btn tv-collapse" id="ptCollapse" title="Collapse / expand">▾</button>
+            </div>
+            <div class="tv-bbody">
+              <div id="ptTabBody"></div>
+              <div id="ptAcctTab" class="tv-accttab hidden">
+                <div id="ptAcctStats" class="tv-acctstats"></div>
+                <div id="ptEqChart" class="pt-eq"></div>
+              </div>
             </div>
           </div>
-          <div id="ptChart" class="pt-chart"></div>
-          <div class="muted small pt-attr">Charts by <a data-url="https://www.tradingview.com/">TradingView</a> Lightweight Charts. Times are New York (ET). Click the chart to set a limit/stop price.</div>
         </div>
-        <div class="card pt-ticket">
-          <div class="pt-side"><button data-side="buy" class="on buy">Buy</button><button data-side="sell" class="sell">Sell / Short</button></div>
-          <label>Order type
-            <select id="ptType"><option value="market">Market</option><option value="limit">Limit</option><option value="stop">Stop</option></select></label>
-          <label id="ptPriceRow" class="hidden">Price <input id="ptPrice" type="number" step="0.01" min="0" /></label>
-          <label>Shares <input id="ptQty" type="number" min="1" step="1" value="10" /></label>
-          <label class="check"><input type="checkbox" id="ptUseSL" /> Stop-loss</label>
-          <input id="ptSL" type="number" step="0.01" min="0" class="hidden" placeholder="Stop-loss price" />
-          <label class="check"><input type="checkbox" id="ptUseTP" /> Take-profit</label>
-          <input id="ptTP" type="number" step="0.01" min="0" class="hidden" placeholder="Take-profit price" />
-          <div id="ptEst" class="pt-est"></div>
-          <button class="btn pt-submit" id="ptSubmit">Place order</button>
-          <div id="ptMsg" class="small"></div>
+        <div class="tv-right">
+          <div class="tv-watch">
+            <div class="tv-rhead"><b>Watchlist</b><input id="ptWatchAdd" type="search" placeholder="+ Add" spellcheck="false" autocomplete="off" /></div>
+            <div class="tv-wcols"><span>Symbol</span><span>Last</span><span>Chg</span><span>Chg%</span></div>
+            <div id="ptWatch" class="tv-wlist"></div>
+          </div>
+          <div class="tv-ticket pt-ticket">
+            <div class="tv-rhead"><b id="ptTicketSym">Order</b><span id="ptTicketQuote" class="muted small"></span></div>
+            <div class="pt-side"><button data-side="buy" class="on buy">Buy</button><button data-side="sell" class="sell">Sell / Short</button></div>
+            <div class="tv-otype" id="ptOType">
+              <button data-type="market" class="on">Market</button><button data-type="limit">Limit</button><button data-type="stop">Stop</button>
+            </div>
+            <select id="ptType" class="hidden"><option value="market">Market</option><option value="limit">Limit</option><option value="stop">Stop</option></select>
+            <label id="ptPriceRow" class="hidden">Price <input id="ptPrice" type="number" step="0.01" min="0" /></label>
+            <label>Shares <input id="ptQty" type="number" min="1" step="1" value="10" /></label>
+            <div class="tv-brk">
+              <label class="check"><input type="checkbox" id="ptUseSL" /> Stop-loss</label>
+              <input id="ptSL" type="number" step="0.01" min="0" class="hidden" placeholder="Stop-loss price" />
+              <label class="check"><input type="checkbox" id="ptUseTP" /> Take-profit</label>
+              <input id="ptTP" type="number" step="0.01" min="0" class="hidden" placeholder="Take-profit price" />
+            </div>
+            <div id="ptEst" class="pt-est"></div>
+            <button class="btn pt-submit" id="ptSubmit">Place order</button>
+            <div id="ptMsg" class="small"></div>
+            <div class="muted small pt-attr">Chart by <a data-url="https://www.tradingview.com/">TradingView</a> Lightweight Charts. Times are New York (ET). Right-click the chart to place a limit or stop at that price; drag order lines to move them.</div>
+          </div>
         </div>
-      </div>
-      <div class="card pt-tabs-card">
-        <div class="chips pt-tabs" id="ptTabs">
-          <button data-t="pos" class="on">Positions</button><button data-t="ord">Working orders</button>
-          <button data-t="hist">History</button><button data-t="eq">Equity curve</button>
-        </div>
-        <div id="ptTabBody"></div>
-        <div id="ptEqChart" class="pt-eq hidden"></div>
       </div>
     </section>
 

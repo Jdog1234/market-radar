@@ -209,11 +209,13 @@ The app does **not** invent probabilities. Every trade idea is logged, and once 
 
 Paper trading is how you check whether you can actually execute these ideas before risking money. The simulation is deliberately strict, so results aren't flattering:
 
-- **Fills only in regular hours** (9:30–16:00 ET). Orders placed outside them fill at the open, so overnight gaps hit you just as they would in a real account.
-- **Market and stop orders pay 0.05% slippage.** Limit orders fill at your price, or better if the price gaps through it.
-- **Brackets:** an attached stop-loss and take-profit become active when the entry fills, and one cancels the other. If a market entry fills away from the planned price, both move by the same amount so the planned risk stays the same.
+- **Live, streaming prices.** Quotes stream in tick by tick (Yahoo Finance's live feed), so orders fill as fast as the market moves. If the stream drops, the app switches to polling every 3 seconds and reconnects in the background (the dot in the top-right corner says which).
+- **You pay the spread, like a real account.** Market buys fill at the **ask** and sells at the **bid**. A buy limit fills only once the ask reaches your price, and a sell limit once the bid does. Stops trigger on the last trade and then fill at the ask/bid, like a stop-market order. When no bid/ask is available, fills use the last price ± 0.05%.
+- **Fills only in regular hours** (9:30–16:00 ET), and only on a fresh quote (under 60 seconds old) from the regular session. Orders placed outside them fill at the open, so overnight gaps hit you just as they would in a real account.
+- **Limit orders fill at your price, or better** if the price gaps through it.
+- **Brackets:** an attached stop-loss and take-profit become active when the entry fills, and one cancels the other. If a market entry fills away from the planned price, both move by the same amount so the planned risk stays the same. Drag any order line on the chart to move it; a stop dragged through the market is refused (it would fill at once).
 - **Shorts are allowed,** with margin-style buying power (2× equity minus open positions).
-- **No commissions** (most US brokers charge none). Real trading adds spreads on thin stocks, so expect live results to be slightly worse.
+- **No commissions** (most US brokers charge none). Real trading can still be slightly worse on thin stocks (partial fills, queue position), so treat paper results as a best case.
 
 Compare your paper results with the app's Track record. If your paper trades do worse than the ideas themselves, the problem is execution (chasing, moving stops), not the signals.
 
