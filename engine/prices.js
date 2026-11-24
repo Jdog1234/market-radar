@@ -36,7 +36,10 @@ async function withLiveBar(bars, symbol, assetclass) {
     // Scale partial-day volume to a full-session estimate (9:30–16:00 ET).
     const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
     const mins = et.getHours() * 60 + et.getMinutes() - 570;
-    if (volume && day.toDateString() === et.toDateString() && mins > 15 && mins < 390) volume = volume * (390 / mins);
+    if (volume && day.toDateString() === et.toDateString() && mins < 390) {
+      // Too early in the session to project a full day: leave volume out of RVOL.
+      volume = mins > 15 ? volume * (390 / mins) : null;
+    }
     return [...bars, { date: day.toLocaleDateString('en-US'), close: price, volume, live: true }];
   } catch {
     return bars;
@@ -49,13 +52,15 @@ const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 function technicals(bars) {
   if (!bars || bars.length < 25) return null;
   const closes = bars.map((b) => b.close);
-  const vols = bars.map((b) => b.volume || 0);
+  const vols = bars.map((b) => b.volume ?? 0);
   const last = closes.at(-1);
   const ret = (n) => (closes.length > n ? (last / closes[closes.length - 1 - n] - 1) * 100 : null);
   const s20 = sma(closes, 20);
   const s50 = sma(closes, 50);
-  const avgVol20 = sma(vols.slice(0, -1), 20);
-  const rvol = avgVol20 ? vols.at(-1) / avgVol20 : null;
+  // RVOL from the latest bar that has usable volume (today's, once the session is underway).
+  const k = bars.at(-1).volume == null ? bars.length - 2 : bars.length - 1;
+  const avgVol20 = sma(vols.slice(0, k), 20);
+  const rvol = avgVol20 ? vols[k] / avgVol20 : null;
   const hi = Math.max(...closes.slice(-60));
   const lo = Math.min(...closes.slice(-60));
 

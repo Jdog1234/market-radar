@@ -13,7 +13,8 @@ const MAX_AGE = 5 * 24 * HOUR;
 const BROKERS = new Set(['MS', 'GS', 'JPM', 'C', 'BCS', 'UBS', 'DB', 'WFC', 'BAC', 'HSBC', 'JEF', 'RJF', 'PIPR', 'SF', 'EVR', 'MFG', 'LAZ', 'SCHW', 'BMO', 'RY', 'TD', 'CM', 'BNS', 'ING', 'SAN', 'NMR']);
 const BROKER_ACTION = /\b(upgrade|downgrade|initiat|price target|pt\b|rating|says|sees|warns|expects|strategist|analysts?|economists?|note|forecasts?|predicts?|top picks?|bullish|bearish|overweight|underweight|outperform|underperform)/i;
 // "A acquires B": B is the takeover target, A is not.
-const ACQUIRES = /\b(acquires?|to acquire|agrees? to (buy|acquire)|to buy|buys|bids? for|deal for|offer for|takeover of|merger with|to merge with)\b/i;
+const ACQUIRES = /\b(acquires?|to acquire|agrees? to (buy|acquire)|to buy|buys|bids? for|takeover of|merger with|to merge with)\b/i;
+const MNA_CTX = /\b(billion|million|\$\d|acquisition|acquires?|acquire|takeover|merger|merge|all-cash|per share|buyout|deal)\b/i;
 
 // Aggregators / SEO publishers: often recycled or auto-generated.
 const LOW_QUALITY = /ad-hoc-news|zacks|motley fool|fool\.com|simply wall|marketbeat|wall street zen|investorplace|24\/7 wall|gurufocus|tipranks|insider monkey|stocktitan|ainvest|benzinga pro|seeking alpha \(user\)|finimize|yahoo finance video/i;
@@ -37,97 +38,14 @@ async function scan(settings, onProgress = () => {}) {
     earningsCalendar(6).catch(() => []),
   ]);
 
-  // ---- classify & tag every headline ----
   progress('Classifying headlines…', 62);
-  const news = [];
-  for (const it of items) {
-    const at = it.publishedAt || now;
-    if (now - at > MAX_AGE) continue;
-    const text = `${it.title}. ${it.kind === 'stocks' ? it.summary : ''}`;
-    const tickers = new Set(tagTickers(it.title, u));
-    // Summaries are noisier: only explicit ticker tags, not company names.
-    for (const t of tagTickers(it.summary || '', u, { allowNames: false })) tickers.add(t);
-    if (it.forTicker && u.bySymbol.has(it.forTicker)) {
-      const s = u.bySymbol.get(it.forTicker);
-      if (tickers.size === 0 || it.title.includes(it.forTicker) || it.title.includes(s.short)) tickers.add(it.forTicker);
-    }
-    const { catalysts, lawSpam, opinion } = classify(text);
-    const titleOnly = classify(it.title);
-    // Prefer title catalysts; summary-only catalysts count at half strength.
-    const cats = catalysts.map((c) => ({ ...c, half: !titleOnly.catalysts.some((t) => t.id === c.id) }));
+  const news = analyzeItems(items, u, now);
 
-    // Brokers quoted as the source of a call aren't the subject of it.
-    if (BROKER_ACTION.test(it.title) && !/\b(earnings|profit|revenue|results|quarter)\b/i.test(it.title)) {
-      for (const t of [...tickers]) if (BROKERS.has(t)) tickers.delete(t);
-    }
-    // Takeovers: only the company being bought gets the bullish takeover catalyst.
-    const perTicker = {};
-    const acq = it.title.match(ACQUIRES);
-    const afterAcq = acq ? it.title.slice(acq.index + acq[0].length) : '';
-    if (acq && tickers.size && !/\b(shares|stake|stock|bonds?|notes|calls|puts|dip)\b/i.test(afterAcq.slice(0, 50))) {
-      const after = new Set(tagTickers(afterAcq, u));
-      for (const t of tickers) {
-        perTicker[t] = after.has(t) ? [{ ...ACQUIRED_RULE, half: false }] : [];
-      }
-    }
-    for (const t of Object.keys(perTicker)) {
-      // Buyers don't inherit the target's "acquired" / price-pop catalysts.
-      if (!perTicker[t].length) perTicker[t] = cats.filter((c) => c.id !== 'acquired' && !c.momentum);
-      else perTicker[t] = [...perTicker[t], ...cats.filter((c) => c.id !== 'acquired')];
-    }
-
-    news.push({
-      title: it.title, link: it.link, publisher: it.publisher, feed: it.feed, kind: it.kind, publishedAt: at,
-      tickers: [...tickers], catalysts: cats.map((c) => ({ id: c.id, label: c.label, weight: c.weight })),
-      lawSpam, opinion, _cats: cats, _perTicker: perTicker,
-    });
-  }
-
-  // ---- aggregate per ticker ----
   const minCap = settings.minMarketCap ?? 5e8;
   const minPrice = settings.minPrice ?? 3;
-  const agg = new Map();
-  for (const n of news) {
-    if (!n.tickers.length) continue;
-    if (n.tickers.length > 4) continue; // market-wide roundup, not about one company
-    const age = now - n.publishedAt;
-    const srcW = n.opinion ? 0.4 : LOW_QUALITY.test(n.publisher) ? 0.6 : 1;
-    for (const sym of n.tickers) {
-      const info = u.bySymbol.get(sym);
-      const onWatch = watchlist.includes(sym);
-      if (!onWatch && ((info.marketCap || 0) < minCap || (info.price || 0) < minPrice)) continue;
-      const cats = n._perTicker[sym] || n._cats;
-      if (!cats.length) continue;
-      let a = agg.get(sym);
-      if (!a) agg.set(sym, (a = { symbol: sym, info, onWatch, byCat: new Map(), headlines: [] }));
-      a.headlines.push(n);
-      for (const c of cats) {
-        let w = c.weight * decay(age, c.hl) * srcW * (c.half ? 0.5 : 1) / Math.sqrt(n.tickers.length);
-        if (n.lawSpam) w = Math.max(w, -0.3);
-        if (!a.byCat.has(c.id)) a.byCat.set(c.id, { id: c.id, label: c.label, weight: c.weight, contribs: [] });
-        a.byCat.get(c.id).contribs.push(w);
-      }
-    }
-  }
-
-  const candidates = [];
-  for (const a of agg.values()) {
-    let raw = 0;
-    const reasons = [];
-    for (const c of a.byCat.values()) {
-      // Repeats of the same catalyst count with diminishing weight (syndication ≠ new info).
-      const total = c.contribs.sort((x, y) => Math.abs(y) - Math.abs(x)).reduce((s, w, i) => s + w * Math.pow(0.5, i), 0);
-      raw += total;
-      reasons.push({ id: c.id, label: c.label, value: total, count: c.contribs.length });
-    }
-    reasons.sort((x, y) => Math.abs(y.value) - Math.abs(x.value));
-    const sources = new Set(a.headlines.filter((h) => !h.opinion && !h.lawSpam).map((h) => h.publisher.toLowerCase()));
-    candidates.push({
-      symbol: a.symbol, name: a.info.name, sector: a.info.sector, industry: a.info.industry, marketCap: a.info.marketCap,
-      onWatch: a.onWatch, newsRaw: raw, newsScore: 10 * Math.tanh(raw / 6), reasons, independentSources: sources.size,
-      headlines: a.headlines.sort((x, y) => y.publishedAt - x.publishedAt).slice(0, 12).map(stripPrivate),
-    });
-  }
+  const candidates = aggregate(news, u, now, (sym, info) =>
+    watchlist.includes(sym) || ((info.marketCap || 0) >= minCap && (info.price || 0) >= minPrice));
+  for (const c of candidates) c.onWatch = watchlist.includes(c.symbol);
   // Watchlist stocks always appear, even without news.
   for (const sym of watchlist) {
     if (!candidates.some((c) => c.symbol === sym) && u.bySymbol.has(sym)) {
@@ -201,6 +119,100 @@ async function scan(settings, onProgress = () => {}) {
   };
 }
 
+// Classify every headline and tag the tickers it is about.
+function analyzeItems(items, u, now = Date.now()) {
+  const news = [];
+  for (const it of items) {
+    const at = it.publishedAt || now;
+    if (now - at > MAX_AGE) continue;
+    const text = `${it.title}. ${it.kind === 'stocks' ? it.summary : ''}`;
+    const tickers = new Set(tagTickers(it.title, u));
+    // Summaries are noisier: only explicit ticker tags, not company names.
+    for (const t of tagTickers(it.summary || '', u, { allowNames: false })) tickers.add(t);
+    if (it.forTicker && u.bySymbol.has(it.forTicker)) {
+      const s = u.bySymbol.get(it.forTicker);
+      if (tickers.size === 0 || it.title.includes(it.forTicker) || it.title.includes(s.short)) tickers.add(it.forTicker);
+    }
+    const { catalysts, lawSpam, opinion } = classify(text);
+    const titleOnly = classify(it.title);
+    // Prefer title catalysts; summary-only catalysts count at half strength.
+    const cats = catalysts.map((c) => ({ ...c, half: !titleOnly.catalysts.some((t) => t.id === c.id) }));
+
+    // Brokers quoted as the source of a call aren't the subject of it.
+    if (BROKER_ACTION.test(it.title) && !/\b(earnings|profit|revenue|results|quarter)\b/i.test(it.title)) {
+      for (const t of [...tickers]) if (BROKERS.has(t)) tickers.delete(t);
+    }
+    // Takeovers: only the company being bought gets the bullish takeover catalyst.
+    const perTicker = {};
+    const acq = it.title.match(ACQUIRES);
+    const afterAcq = acq ? it.title.slice(acq.index + acq[0].length) : '';
+    if (acq && tickers.size && MNA_CTX.test(it.title.replace(acq[0], '')) && !/\b(shares|stake|stock|bonds?|notes|calls|puts|dip)\b/i.test(afterAcq.slice(0, 50))) {
+      const after = new Set(tagTickers(afterAcq, u));
+      for (const t of tickers) {
+        perTicker[t] = after.has(t) ? [{ ...ACQUIRED_RULE, half: false }] : [];
+      }
+    }
+    for (const t of Object.keys(perTicker)) {
+      // Buyers don't inherit the target's "acquired" / price-pop catalysts.
+      if (!perTicker[t].length) perTicker[t] = cats.filter((c) => c.id !== 'acquired' && !c.momentum);
+      else perTicker[t] = [...perTicker[t], ...cats.filter((c) => c.id !== 'acquired')];
+    }
+
+    news.push({
+      title: it.title, link: it.link, publisher: it.publisher, feed: it.feed, kind: it.kind, publishedAt: at,
+      tickers: [...tickers], catalysts: cats.map((c) => ({ id: c.id, label: c.label, weight: c.weight })),
+      lawSpam, opinion, _cats: cats, _perTicker: perTicker,
+    });
+  }
+  return news;
+}
+
+// Sum decayed catalyst weights per ticker → news score, reasons and headlines.
+function aggregate(news, u, now, include = () => true) {
+  const agg = new Map();
+  for (const n of news) {
+    if (!n.tickers.length) continue;
+    if (n.tickers.length > 4) continue; // market-wide roundup, not about one company
+    const age = now - n.publishedAt;
+    const srcW = n.opinion ? 0.4 : LOW_QUALITY.test(n.publisher) ? 0.6 : 1;
+    for (const sym of n.tickers) {
+      const info = u.bySymbol.get(sym);
+      if (!include(sym, info)) continue;
+      const cats = n._perTicker[sym] || n._cats;
+      if (!cats.length) continue;
+      let a = agg.get(sym);
+      if (!a) agg.set(sym, (a = { symbol: sym, info, byCat: new Map(), headlines: [] }));
+      a.headlines.push(n);
+      for (const c of cats) {
+        let w = c.weight * decay(age, c.hl) * srcW * (c.half ? 0.5 : 1) / Math.sqrt(n.tickers.length);
+        if (n.lawSpam) w = Math.max(w, -0.3);
+        if (!a.byCat.has(c.id)) a.byCat.set(c.id, { id: c.id, label: c.label, weight: c.weight, contribs: [] });
+        a.byCat.get(c.id).contribs.push(w);
+      }
+    }
+  }
+
+  const out = [];
+  for (const a of agg.values()) {
+    let raw = 0;
+    const reasons = [];
+    for (const c of a.byCat.values()) {
+      // Repeats of the same catalyst count with diminishing weight (syndication ≠ new info).
+      const total = c.contribs.sort((x, y) => Math.abs(y) - Math.abs(x)).reduce((s, w, i) => s + w * Math.pow(0.5, i), 0);
+      raw += total;
+      reasons.push({ id: c.id, label: c.label, value: total, count: c.contribs.length });
+    }
+    reasons.sort((x, y) => Math.abs(y.value) - Math.abs(x.value));
+    const sources = new Set(a.headlines.filter((h) => !h.opinion && !h.lawSpam).map((h) => h.publisher.toLowerCase()));
+    out.push({
+      symbol: a.symbol, name: a.info.name, sector: a.info.sector, industry: a.info.industry, marketCap: a.info.marketCap,
+      newsRaw: raw, newsScore: 10 * Math.tanh(raw / 6), reasons, independentSources: sources.size,
+      headlines: a.headlines.sort((x, y) => y.publishedAt - x.publishedAt).slice(0, 15).map(stripPrivate),
+    });
+  }
+  return out;
+}
+
 function stripPrivate(n) {
   const { _cats, _perTicker, ...rest } = n;
   return rest;
@@ -227,4 +239,4 @@ function marketRegime(spy, qqq) {
   return { indices: [s, q].filter(Boolean), verdict };
 }
 
-module.exports = { scan };
+module.exports = { scan, analyzeItems, aggregate };

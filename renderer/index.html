@@ -11,18 +11,24 @@
     <div class="brand"><span class="logo">◎</span> Market Radar</div>
     <nav id="nav">
       <button data-view="signals" class="active">Signals</button>
+      <button data-view="lookup">Stock lookup</button>
       <button data-view="watchlist">Watchlist</button>
       <button data-view="news">News feed</button>
       <button data-view="calendar">Economic calendar</button>
       <button data-view="earnings">Earnings</button>
+      <button data-view="track">Track record</button>
       <button data-view="guide">Research guide</button>
       <button data-view="settings">Settings</button>
     </nav>
-    <div class="side-foot" id="stats"></div>
+    <div class="side-foot"><div id="stats"></div><div id="version" class="ver"></div></div>
   </aside>
 
   <main>
     <header class="top">
+      <div class="searchbox">
+        <input id="q" type="search" placeholder="Search any stock — ticker or company…" autocomplete="off" spellcheck="false" />
+        <div id="suggest" class="suggest hidden"></div>
+      </div>
       <div id="regime" class="regime"></div>
       <div class="top-right">
         <span id="scanned" class="muted"></span>
@@ -30,6 +36,8 @@
       </div>
       <div id="progress" class="progress hidden"><div class="bar"></div><span class="label"></span></div>
     </header>
+
+    <div id="updateBar" class="updatebar hidden"></div>
 
     <section id="view-signals" class="view">
       <div id="alerts"></div>
@@ -84,6 +92,16 @@
       <div id="earnList"></div>
     </section>
 
+    <section id="view-lookup" class="view hidden">
+      <div id="lookup"><div class="empty">Search any US-listed stock in the box at the top (e.g. <b>AAPL</b> or <b>Palantir</b>). You'll get a verdict on whether the news and other evidence point up or down, and why.</div></div>
+    </section>
+
+    <section id="view-track" class="view hidden">
+      <h2>Track record</h2>
+      <p class="muted small">Every scan logs its signals with the price at the time. This page shows what actually happened 1, 5 and 20 trading days later. "Right" means a bullish signal went up or a bearish one went down. It takes a few days of scans before results appear, and needs weeks before the numbers mean much.</p>
+      <div id="track"><div class="empty">Loading…</div></div>
+    </section>
+
     <section id="view-guide" class="view hidden"><article id="guide" class="md"></article></section>
 
     <section id="view-settings" class="view hidden">
@@ -99,6 +117,12 @@
         <label class="check"><input type="checkbox" name="notify" /> Desktop notification for new high-confidence signals</label>
         <div><button class="btn" type="submit">Save</button> <span id="saved" class="muted small"></span></div>
       </form>
+      <div class="card about" style="margin-bottom:16px">
+        <h3>Updates</h3>
+        <p class="small muted">Market Radar updates itself automatically: it checks for a new version on launch and every 3 hours, downloads it in the background, and switches to it the next time you restart.</p>
+        <div id="updInfo" class="small"></div>
+        <button class="btn" id="checkUpd" style="margin-top:8px">Check for updates now</button>
+      </div>
       <div class="card about">
         <h3>Data sources</h3>
         <p class="small muted">News: CNBC, MarketWatch, Seeking Alpha, Investing.com, FXStreet, PR Newswire and targeted Google News searches. Prices, movers and earnings: Nasdaq public data. Economic calendar: ForexFactory. All free — no accounts or API keys. Feeds can rate-limit; a failed source is skipped and retried next refresh.</p>

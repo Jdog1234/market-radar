@@ -5,24 +5,44 @@ A desktop app for Mac and Windows (64-bit). It reads ~1,000+ financial headlines
 - **Bullish catalysts**: stocks with news pointing up
 - **Bearish catalysts**: stocks with news pointing down
 
+**Stock Lookup:** search any US stock (ticker or company name) for a verdict on whether the evidence points up or down. The verdict weighs news catalysts, price trend, analyst consensus and price targets, earnings-surprise history, insider buying, and short interest, and it shows StockTwits crowd sentiment for context.
+
+**Track record:** every scan's signals are logged and checked 1, 5 and 20 trading days later, so you can see how often the calls were actually right.
+
 It also has a live **news feed**, an **economic calendar** for forex and macro news (CPI, jobs, FOMC… with plain-English explanations), an **earnings calendar**, and a **research guide** that explains every rule the app uses ([RESEARCH.md](RESEARCH.md)).
 
 Every data source is free. You don't need an account or an API key.
 
 ## Install
 
-Built installers are in `dist/`:
+Download the latest installer from **https://github.com/Jdog1234/market-radar/releases/latest**:
 
 | Platform | File |
 |---|---|
-| Mac (Apple Silicon: M1/M2/M3/M4) | `Market-Radar-1.0.0-arm64.dmg` |
-| Mac (Intel) | `Market-Radar-1.0.0-x64.dmg` |
-| Windows 64-bit installer | `Market-Radar-Setup-1.0.0-x64.exe` |
-| Windows 64-bit, no install | `Market-Radar-Portable-1.0.0-x64.exe` |
+| Mac (Apple Silicon: M1/M2/M3/M4) | `Market-Radar-<version>-arm64.dmg` |
+| Mac (Intel) | `Market-Radar-<version>-x64.dmg` |
+| Windows 64-bit | `Market-Radar-Setup-<version>-x64.exe` |
 
 The app isn't code-signed, so the first launch shows a warning:
-- **Mac:** right-click the app → **Open** → **Open**. On a Mac that downloaded the DMG from the internet, you may need System Settings → Privacy & Security → **Open Anyway**.
+- **Mac:** right-click the app → **Open** → **Open**. If it's still blocked, go to System Settings → Privacy & Security → **Open Anyway**.
 - **Windows:** SmartScreen says "Windows protected your PC". Click **More info** → **Run anyway**.
+
+## Automatic updates
+
+Every installed copy updates itself. It checks GitHub on launch and every 3 hours, downloads the new version in the background (verifying its checksum), and shows a **Restart to update** bar. If you don't restart, the update applies the next time the app opens. If an update ever fails to start 3 times, the app falls back to its built-in version.
+
+### Publishing an update (for the developer)
+
+1. Make your changes, then bump `"version"` in `package.json` (for example 1.1.0 → 1.1.1).
+2. Commit the changes.
+3. Run:
+   ```bash
+   npm run release -- --notes "What changed"
+   ```
+
+This builds the update package and installers, pushes the code to the public repo, and creates the GitHub Release. Installed apps pick it up within 3 hours. Add `--no-installers` for a faster code-only update.
+
+If you change `main.js` (the launcher), Electron, or the `build` settings, also bump `SHELL_VERSION` in `main.js`. Installed copies then show a "download the new installer" notice instead of auto-updating, because those parts can't be swapped while the app runs.
 
 ## Use
 
@@ -41,6 +61,7 @@ npm install
 npm start            # run from source
 npm run dist:mac     # → dist/*.dmg
 npm run dist:win     # → dist/*.exe (works from a Mac too)
+npm run release      # publish an update (see above)
 ```
 
 Code layout:
@@ -50,6 +71,9 @@ Code layout:
 - `engine/prices.js`: daily history plus a live intraday bar from Nasdaq, used for trend, momentum and RVOL
 - `engine/macro.js`: ForexFactory economic calendar and Nasdaq earnings calendar
 - `engine/scanner.js`: combines the above into scores and ranked lists
+- `engine/lookup.js`, `engine/evidence.js`: Stock Lookup and its extra evidence (analysts, earnings, insiders, short interest, crowd)
+- `engine/tracker.js`: signal track record
+- `main.js`: launcher and auto-updater; `app-main.js`: the app itself (updatable)
 - `renderer/`: the UI
 
 ## Limits

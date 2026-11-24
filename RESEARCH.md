@@ -145,6 +145,29 @@ A stock reporting earnings in the next few days can gap ±10% either way overnig
 
 ---
 
+## 8. Extra evidence used by Stock Lookup (added in v1.1)
+
+When you search one stock, the app also pulls data that is too slow to fetch for every stock on every scan. Each item below comes with a research verdict on how much it matters, and the app weights it to match.
+
+| Evidence | What research says | How the app uses it |
+|---|---|---|
+| **Analyst consensus & price target** | Barber, Lehavy, McNichols & Trueman (2001): stocks with the most favorable *consensus* ratings outperform the least favorable, but most of the edge comes from **changes** in ratings, not the level. Price targets are optimistic on average (Bradshaw, Brown & Huang 2013), so upside to target should be discounted. | 10% weight. Buy/Hold/Sell mix plus upside to the average target, with the upside haircut by half. |
+| **Earnings-surprise history** | PEAD (above). Firms with a streak of positive surprises tend to keep surprising (Loh & Warachka 2012 — "streaks in earnings surprises"). The drift fades over ~60 trading days. | 10% weight. Most recent surprise and the 4-quarter streak, faded by how long ago the last report was. |
+| **Insider buying vs selling** | Opportunistic open-market *buys* predict returns; sells mostly don't (Cohen, Malloy & Pomorski 2012). | 7.5% weight. Open-market buys in the last 3 months are bullish; heavy net selling is a mild negative. |
+| **Short interest / days-to-cover** | Heavily shorted stocks underperform on average (Desai et al. 2002; Asquith, Pathak & Ritter 2005; Boehmer, Jones & Zhang 2008 — short sellers are informed). Very high days-to-cover also means squeeze risk on good news. | 7.5% weight. High and rising days-to-cover are bearish evidence; flagged as "squeeze risk" when news is bullish. |
+| **Crowd sentiment (StockTwits)** | Social-media opinion has weak, mixed predictive power. Chen, De, Hu & Hwang (2014) found Seeking Alpha *articles* predict returns, but message-board chatter mostly tracks past price. Heavy retail attention predicts short-term gains that **reverse** (Da, Engelberg & Gao 2011). | **Shown, not scored.** Treat extreme bullish chatter as a caution flag. |
+| **Your signal track record** | Not a paper: this is your own data. Every scan logs its top signals with the price at the time. The Track record tab shows how they actually did 1, 5 and 20 trading days later. | Tells you whether to trust the lists, and which catalyst types work in the current market. |
+
+**Lookup weights:** news 45%, price trend 20%, analysts 10%, earnings history 10%, insiders 7.5%, short interest 7.5%.
+
+**Ideas researched but not built** (and why):
+- **Options flow / unusual options activity:** there's some evidence (Pan & Poteshman 2006), but no free real-time data source.
+- **Reddit (r/wallstreetbets):** Reddit blocks automated access, and the research verdict is mostly "attention, then reversal".
+- **CNN Fear & Greed index:** CNN blocks automated access. The market-tide banner (S&P / Nasdaq trend) covers the same need.
+- **AI summaries of articles:** possible with a Claude API key, but it costs money per scan. Could be added as an opt-in.
+
+---
+
 ### References
 - Ball, R. & Brown, P. (1968). An empirical evaluation of accounting income numbers. *Journal of Accounting Research.*
 - Bernard, V. & Thomas, J. (1989). Post-earnings-announcement drift: delayed price response or risk premium? *Journal of Accounting Research.*
@@ -161,3 +184,12 @@ A stock reporting earnings in the next few days can gap ±10% either way overnig
 - Lucca, D. & Moench, E. (2015). The pre-FOMC announcement drift. *Journal of Finance.*
 - Shleifer, A. (1986). Do demand curves for stocks slope down? *Journal of Finance.*
 - Zarattini, C., Barbon, A. & Aziz, A. (2024). A profitable day trading strategy for the U.S. equity market (Stocks in Play / ORB). SSRN.
+- Barber, B., Lehavy, R., McNichols, M. & Trueman, B. (2001). Can investors profit from the prophets? Security analyst recommendations and stock returns. *Journal of Finance.*
+- Bradshaw, M., Brown, L. & Huang, K. (2013). Do sell-side analysts exhibit differential target price forecasting ability? *Review of Accounting Studies.*
+- Loh, R. & Warachka, M. (2012). Streaks in earnings surprises and the cross-section of stock returns. *Management Science.*
+- Desai, H., Ramesh, K., Thiagarajan, S. & Balachandran, B. (2002). An investigation of the informational role of short interest in the Nasdaq market. *Journal of Finance.*
+- Asquith, P., Pathak, P. & Ritter, J. (2005). Short interest, institutional ownership, and stock returns. *Journal of Financial Economics.*
+- Boehmer, E., Jones, C. & Zhang, X. (2008). Which shorts are informed? *Journal of Finance.*
+- Chen, H., De, P., Hu, Y. & Hwang, B.-H. (2014). Wisdom of crowds: the value of stock opinions transmitted through social media. *Review of Financial Studies.*
+- Da, Z., Engelberg, J. & Gao, P. (2011). In search of attention. *Journal of Finance.*
+- Pan, J. & Poteshman, A. (2006). The information in option volume for future stock prices. *Review of Financial Studies.*

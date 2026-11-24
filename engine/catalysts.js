@@ -95,6 +95,8 @@ const LAW_SPAM = /\b(investor alert|shareholder alert|investors? who lost|class 
 // Opinion/SEO pieces are not news.
 const OPINION = /(\?\s*$|\bshould you\b|\bis it time\b|\bstocks? to (buy|sell|watch)\b|\bbuy now\b|\bprediction\b|\bcould (soar|crash|double|triple)\b|\bmillionaire\b|\bmotley fool\b|\bzacks\b|\b\d+ (reasons|stocks)\b|\bbest stocks?\b|\bhere'?s why\b|\bwhat to expect\b|\bwhat you need to know\b)/i;
 
+const STOCK_CTX = /\b(stocks?|shares?|share price|equity|market cap|nasdaq|nyse|premarket|pre-market|after-hours|trading|investors?|-?\d+(\.\d+)?%)/i;
+
 function classify(text) {
   const matched = [];
   for (const r of RULES) {
@@ -108,6 +110,9 @@ function classify(text) {
     const net = fundamental.reduce((s, r) => s + r.weight, 0);
     final = matched.filter((r) => !r.momentum || Math.sign(r.weight) === Math.sign(net));
   }
+  // Price-move words ("drops", "jumps") only count when the headline is about the stock,
+  // not "Walmart drops TV prices".
+  if (!STOCK_CTX.test(text)) final = final.filter((r) => !r.momentum);
   const lawSpam = LAW_SPAM.test(text);
   if (lawSpam) final = final.filter((r) => r.id === 'lawsuit' || r.id === 'probe');
   return { catalysts: final, lawSpam, opinion: OPINION.test(text) };

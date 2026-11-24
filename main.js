@@ -1,116 +1,142 @@
-const { app, BrowserWindow, ipcMain, shell, Notification } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const { scan } = require('./engine/scanner');
+// Launcher + auto-updater. This file ships inside the installer and changes rarely.
+// The app code (app-main.js, engine/, renderer/) is loaded from either the installed
+// copy or a newer update package downloaded from GitHub Releases, so every installed
+// copy runs the latest version without reinstalling.
+//
+// Bump SHELL_VERSION only when this file, Electron, or package.json "build" settings
+// change. Code updates that need a newer launcher are skipped and the user is told to
+// download the new installer instead.
+const SHELL_VERSION = 1;
+const REPO = 'Jdog1234/market-radar';
+const FEED = `https://github.com/${REPO}/releases/latest/download/update.json`;
+const RELEASES = `https://github.com/${REPO}/releases/latest`;
+const CHECK_EVERY_MS = 3 * 3600e3;
 
-const DEFAULTS = {
-  watchlist: ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'AMD', 'GOOGL'],
-  refreshMinutes: 15,
-  minMarketCap: 5e8,
-  minPrice: 3,
-  notify: true,
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const path = require('path');
+const crypto = require('crypto');
+const ofs = require('original-fs'); // plain fs: lets us write/rename .asar files as ordinary files
+
+const updDir = () => path.join(app.getPath('userData'), 'updates');
+const stateFile = () => path.join(updDir(), 'current.json');
+const bundledVersion = require('./package.json').version;
+
+function readState() {
+  try {
+    return JSON.parse(ofs.readFileSync(stateFile(), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+function writeState(s) {
+  ofs.mkdirSync(updDir(), { recursive: true });
+  ofs.writeFileSync(stateFile(), JSON.stringify(s, null, 2));
+}
+
+function newer(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  return false;
+}
+
+// Decide which copy of the app code to run.
+function pickCode() {
+  const s = readState();
+  const ok =
+    s && s.version && !s.broken && newer(s.version, bundledVersion) && (s.shell || 1) <= SHELL_VERSION &&
+    (s.boots || 0) < 3 && ofs.existsSync(path.join(updDir(), s.file));
+  if (!ok) {
+    if (s && (s.boots || 0) >= 3 && !s.broken) writeState({ ...s, broken: true }); // crashed repeatedly → fall back
+    return { dir: __dirname, version: bundledVersion, fromUpdate: false };
+  }
+  writeState({ ...s, boots: (s.boots || 0) + 1 });
+  return { dir: path.join(updDir(), s.file), version: s.version, fromUpdate: true };
+}
+
+let code;
+let status = { state: 'idle' };
+
+const send = (ch, payload) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(ch, payload));
+const setStatus = (s) => {
+  status = s;
+  send('update:status', s);
 };
 
-const dataDir = () => app.getPath('userData');
-const settingsFile = () => path.join(dataDir(), 'settings.json');
-const lastScanFile = () => path.join(dataDir(), 'last-scan.json');
-
-function readJson(file, fallback) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return fallback;
-  }
+async function download(url) {
+  const res = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': 'MarketRadar-Updater' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+  return Buffer.from(await res.arrayBuffer());
 }
 
-let settings;
-let win;
-let lastScan = null;
-let scanning = false;
-let timer = null;
-const notified = new Set();
-
-function createWindow() {
-  win = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 980,
-    minHeight: 640,
-    title: 'Market Radar',
-    backgroundColor: '#0b0f14',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
-  });
-  win.removeMenu();
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  // Every link opens in the user's real browser, never inside the app.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) shell.openExternal(url);
-    return { action: 'deny' };
-  });
-}
-
-async function runScan() {
-  if (scanning) return lastScan;
-  scanning = true;
-  win?.webContents.send('scan:progress', { stage: 'Starting…', pct: 0 });
+async function checkForUpdates() {
+  if (status.state === 'checking' || status.state === 'downloading') return status;
+  setStatus({ state: 'checking' });
   try {
-    const result = await scan({ ...settings, econCacheFile: path.join(dataDir(), 'econ-cache.json') }, (p) => win?.webContents.send('scan:progress', p));
-    // Calendars are rate-limited upstream; keep the last good copy rather than showing nothing.
-    if (!result.econ.length && lastScan?.econ?.length) result.econ = lastScan.econ;
-    if (!result.earnings.length && lastScan?.earnings?.length) result.earnings = lastScan.earnings;
-    lastScan = result;
-    fs.writeFileSync(lastScanFile(), JSON.stringify(result));
-    notifyNew(result);
-    win?.webContents.send('scan:result', result);
+    const manifest = JSON.parse((await download(FEED)).toString('utf8'));
+    const installed = readState();
+    // Newest version we already have: running now, or downloaded and waiting for a restart.
+    const waiting = installed && !installed.broken && newer(installed.version, code.version) ? installed.version : null;
+    const have = waiting || code.version;
+    const badRelease = installed?.broken && installed.version === manifest.version;
+    if (!newer(manifest.version, have) || badRelease) {
+      setStatus(waiting ? { state: 'ready', version: waiting, notes: installed.notes } : { state: 'latest', version: code.version });
+      return status;
+    }
+    if ((manifest.shell || 1) > SHELL_VERSION) {
+      setStatus({ state: 'installer', version: manifest.version, notes: manifest.notes, url: RELEASES });
+      return status;
+    }
+    setStatus({ state: 'downloading', version: manifest.version });
+    const buf = await download(`https://github.com/${REPO}/releases/download/v${manifest.version}/${manifest.file}`);
+    const sha = crypto.createHash('sha256').update(buf).digest('hex');
+    if (sha !== manifest.sha256) throw new Error('Update failed its integrity check, so it was skipped');
+    ofs.mkdirSync(updDir(), { recursive: true });
+    const tmp = path.join(updDir(), `${manifest.file}.part`);
+    ofs.writeFileSync(tmp, buf);
+    ofs.renameSync(tmp, path.join(updDir(), manifest.file));
+    writeState({ version: manifest.version, file: manifest.file, shell: manifest.shell || 1, boots: 0, notes: manifest.notes, at: Date.now() });
+    // Remove older downloaded packages.
+    for (const f of ofs.readdirSync(updDir())) {
+      if (f.endsWith('.asar') && f !== manifest.file && f !== path.basename(code.dir)) ofs.rmSync(path.join(updDir(), f), { force: true });
+    }
+    setStatus({ state: 'ready', version: manifest.version, notes: manifest.notes });
   } catch (err) {
-    win?.webContents.send('scan:error', String(err?.message || err));
-  } finally {
-    scanning = false;
+    setStatus({ state: 'error', error: String(err?.message || err), version: code.version });
   }
-  return lastScan;
+  return status;
 }
 
-function notifyNew(result) {
-  if (!settings.notify || !Notification.isSupported()) return;
-  const fresh = [...result.bullish, ...result.bearish].filter(
-    (c) => c.confidence === 'High' && !notified.has(`${c.symbol}:${Math.sign(c.composite)}`)
-  );
-  for (const c of fresh) notified.add(`${c.symbol}:${Math.sign(c.composite)}`);
-  if (!fresh.length || notified.size === fresh.length) return; // skip the very first scan
-  const lines = fresh.slice(0, 4).map((c) => `${c.composite > 0 ? '▲' : '▼'} ${c.symbol} — ${c.reasons[0]?.label || ''}`);
-  new Notification({ title: `Market Radar: ${fresh.length} new high-confidence signal${fresh.length > 1 ? 's' : ''}`, body: lines.join('\n') }).show();
-}
-
-function schedule() {
-  clearInterval(timer);
-  const mins = Math.max(5, Number(settings.refreshMinutes) || 15);
-  timer = setInterval(runScan, mins * 60e3);
-}
-
-ipcMain.handle('settings:get', () => settings);
-ipcMain.handle('settings:set', (_e, next) => {
-  settings = { ...settings, ...next };
-  fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
-  schedule();
-  return settings;
+ipcMain.handle('app:info', () => ({ version: code.version, fromUpdate: code.fromUpdate, shell: SHELL_VERSION, releases: RELEASES }));
+ipcMain.handle('update:status', () => status);
+ipcMain.handle('update:check', () => checkForUpdates());
+ipcMain.handle('update:restart', () => {
+  app.relaunch();
+  app.exit(0);
 });
-ipcMain.handle('scan:last', () => lastScan);
-ipcMain.handle('scan:run', () => runScan());
-ipcMain.handle('guide:get', () => fs.readFileSync(path.join(__dirname, 'RESEARCH.md'), 'utf8'));
-ipcMain.handle('open:external', (_e, url) => {
-  if (/^https?:\/\//.test(url)) shell.openExternal(url);
-});
+ipcMain.handle('update:installer', () => shell.openExternal(RELEASES));
 
 app.whenReady().then(() => {
-  settings = { ...DEFAULTS, ...readJson(settingsFile(), {}) };
-  lastScan = readJson(lastScanFile(), null);
-  for (const c of [...(lastScan?.bullish || []), ...(lastScan?.bearish || [])]) {
-    if (c.confidence === 'High') notified.add(`${c.symbol}:${Math.sign(c.composite)}`);
+  code = pickCode();
+  let mod;
+  try {
+    mod = require(path.join(code.dir, 'app-main.js'));
+  } catch (err) {
+    if (!code.fromUpdate) throw err;
+    // A downloaded update failed to load: mark it broken and run the installed copy.
+    writeState({ ...readState(), broken: true, boots: 99 });
+    code = { dir: __dirname, version: bundledVersion, fromUpdate: false };
+    mod = require('./app-main.js');
   }
-  createWindow();
-  win.webContents.once('did-finish-load', runScan);
-  schedule();
-  app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());
+  mod.start({
+    version: code.version,
+    markHealthy: () => {
+      const s = readState();
+      if (code.fromUpdate && s) writeState({ ...s, boots: 0 });
+    },
+  });
+  setTimeout(checkForUpdates, 8000);
+  setInterval(checkForUpdates, CHECK_EVERY_MS);
 });
 
 app.on('window-all-closed', () => {

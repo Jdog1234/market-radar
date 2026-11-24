@@ -1,7 +1,7 @@
 {
   "name": "market-radar",
   "productName": "Market Radar",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Reads market, earnings, analyst and macro/forex news and ranks stocks with bullish and bearish catalysts.",
   "main": "main.js",
   "author": "Jake",
@@ -9,7 +9,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "scan": "node scripts/cli-scan.js",
+    "release": "node scripts/release.js",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win --x64",
     "dist": "electron-builder --mac --win"
@@ -21,19 +21,52 @@
   "build": {
     "appId": "com.jake.marketradar",
     "productName": "Market Radar",
-    "files": ["main.js", "preload.js", "engine/**", "renderer/**", "RESEARCH.md", "package.json"],
-    "directories": { "output": "dist", "buildResources": "build" },
+    "files": [
+      "main.js",
+      "app-main.js",
+      "preload.js",
+      "engine/**",
+      "renderer/**",
+      "RESEARCH.md",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
       "category": "public.app-category.finance",
       "icon": "build/icon.png"
     },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.png"
     },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "artifactName": "Market-Radar-Setup-${version}-x64.exe" },
-    "portable": { "artifactName": "Market-Radar-Portable-${version}-x64.exe" },
-    "dmg": { "artifactName": "Market-Radar-${version}-${arch}.dmg" }
-  }
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Market-Radar-Setup-${version}-x64.exe"
+    },
+    "dmg": {
+      "artifactName": "Market-Radar-${version}-${arch}.dmg"
+    },
+    "publish": null
+  },
+  "repository": "https://github.com/Jdog1234/market-radar"
 }
