@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Market Radar — the news that hasn't been priced in yet</title>
+  <meta name="description" content="Market Radar reads ~3,000 market headlines every scan, finds the stocks whose news hasn't moved the price yet, and shows its own measured track record. Free for Mac and Windows." />
+  <meta property="og:title" content="Market Radar" />
+  <meta property="og:description" content="The news that hasn't been priced in yet — with a track record you can check." />
+  <meta property="og:image" content="img/before-move.jpg" />
+  <link rel="icon" href="img/icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0b0f14; --panel: #121820; --panel2: #18202a; --line: #232d3a; --text: #e6edf3; --muted: #8b98a8;
+      --up: #22c55e; --down: #f05252; --accent: #4f9cf9;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 Inter, -apple-system, 'Segoe UI', sans-serif; }
+    a { color: inherit; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; text-decoration: none; }
+    .brand img { width: 30px; height: 30px; }
+    nav .links { display: flex; gap: 22px; font-size: 14px; color: var(--muted); }
+    nav .links a { text-decoration: none; }
+    nav .links a:hover { color: var(--text); }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 10px; font-weight: 600; text-decoration: none; border: 1px solid transparent; cursor: pointer; font-size: 15px; }
+    .btn.primary { background: var(--accent); color: #fff; }
+    .btn.ghost { border-color: var(--line); background: var(--panel); }
+    .btn:hover { filter: brightness(1.08); }
+
+    .hero { padding: 64px 0 40px; text-align: center; }
+    .eyebrow { display: inline-block; font-size: 13px; color: var(--muted); border: 1px solid var(--line); border-radius: 20px; padding: 4px 12px; margin-bottom: 20px; }
+    h1 { font-size: clamp(34px, 6vw, 60px); line-height: 1.08; letter-spacing: -0.03em; margin: 0 auto 18px; max-width: 860px; }
+    h1 .up { color: var(--up); }
+    .sub { font-size: 19px; color: var(--muted); max-width: 680px; margin: 0 auto 30px; }
+    .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .note { font-size: 13px; color: var(--muted); margin-top: 14px; }
+    .shot { margin: 46px auto 0; border-radius: 14px; border: 1px solid var(--line); overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.5); }
+    .shot img { display: block; width: 100%; height: auto; }
+
+    section { padding: 80px 0; }
+    h2 { font-size: clamp(26px, 4vw, 38px); letter-spacing: -0.02em; margin: 0 0 12px; }
+    .lead { color: var(--muted); font-size: 17px; max-width: 640px; margin: 0 0 40px; }
+    .feature { display: grid; grid-template-columns: 1fr 1.4fr; gap: 44px; align-items: center; margin-bottom: 80px; }
+    .feature.rev { grid-template-columns: 1.4fr 1fr; }
+    .feature.rev .text { order: 2; }
+    .feature h3 { font-size: 24px; margin: 0 0 10px; letter-spacing: -0.01em; }
+    .feature p { color: var(--muted); margin: 0 0 12px; }
+    .feature ul { color: var(--muted); padding-left: 18px; margin: 0; }
+    .feature .shot { margin: 0; box-shadow: 0 20px 50px rgba(0,0,0,0.4); }
+
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+    .card h4 { margin: 0 0 6px; font-size: 17px; }
+    .card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+    .honest { background: var(--panel); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .honest .grid3 .card { background: var(--bg); }
+
+    .waitlist { text-align: center; }
+    form { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 24px; }
+    input[type=email] { width: 320px; max-width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; }
+    #formMsg { margin-top: 12px; font-size: 14px; color: var(--muted); min-height: 20px; }
+
+    footer { border-top: 1px solid var(--line); padding: 30px 0 50px; color: var(--muted); font-size: 13px; }
+    footer p { margin: 6px 0; max-width: 860px; }
+
+    @media (max-width: 860px) {
+      nav .links { display: none; }
+      .feature, .feature.rev { grid-template-columns: 1fr; gap: 20px; }
+      .feature.rev .text { order: 0; }
+      .grid3 { grid-template-columns: 1fr; }
+      section { padding: 56px 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="wrap">
+    <nav>
+      <a class="brand" href="#"><img src="img/icon.png" alt="" />Market Radar</a>
+      <div class="links"><a href="#features">Features</a><a href="#honest">How it works</a><a href="#download">Download</a></div>
+      <a class="btn ghost" href="#download">Get it free</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="wrap hero">
+      <span class="eyebrow">Free beta · Mac &amp; Windows</span>
+      <h1>The market news that <span class="up">hasn't been priced in yet.</span></h1>
+      <p class="sub">Market Radar reads about 3,000 headlines every scan, scores the catalysts that research shows actually move stocks, and flags the ones the price hasn't reacted to yet. Then it keeps score of its own ideas, in public.</p>
+      <div class="cta">
+        <a class="btn primary" href="#download">Download free</a>
+        <a class="btn ghost" href="#features">See how it works</a>
+      </div>
+      <p class="note">No account needed. Updates itself automatically.</p>
+      <div class="shot"><img src="img/before-move.jpg" alt="Market Radar's Before the move screen listing stocks with unpriced news" /></div>
+    </div>
+
+    <section id="features">
+      <div class="wrap">
+        <h2>Everything a news-driven trader checks, in one place</h2>
+        <p class="lead">Built on published research: earnings drift, analyst revisions, insider buying, short interest, and how prices under-react to news.</p>
+
+        <div class="feature">
+          <div class="text">
+            <h3>Before the move</h3>
+            <p>Strong news, weak reaction. Market Radar measures how far each stock has moved since its news against its normal daily range, and surfaces the ones that haven't caught up yet.</p>
+            <ul><li>Guidance raises, upgrades, FDA approvals, offerings, short reports</li><li>Companies reporting soon with a consistent beat or miss streak</li></ul>
+          </div>
+          <div class="shot"><img src="img/before-move.jpg" alt="" loading="lazy" /></div>
+        </div>
+
+        <div class="feature rev">
+          <div class="text">
+            <h3>Trade ideas with the plan built in</h3>
+            <p>Every idea comes with an entry, a stop-loss sized to the stock's normal move, a 2:1 target, a time frame based on the catalyst, and a position size for your account.</p>
+            <ul><li>Win rates are measured from past ideas, never invented</li><li>One click sends it to paper trading</li></ul>
+          </div>
+          <div class="shot"><img src="img/trade-ideas.jpg" alt="Trade ideas with entry, stop and target" loading="lazy" /></div>
+        </div>
+
+        <div class="feature">
+          <div class="text">
+            <h3>Paper trade on live charts</h3>
+            <p>Practice with fake money before risking real money. Up to four live charts, market, limit and stop orders, and stop-loss and take-profit lines you drag right on the chart.</p>
+            <ul><li>Fills only in market hours, with realistic slippage</li><li>Positions, history and an equity curve</li></ul>
+          </div>
+          <div class="shot"><img src="img/charts.jpg" alt="Four live charts in the paper trading workspace" loading="lazy" /></div>
+        </div>
+
+        <div class="feature rev">
+          <div class="text">
+            <h3>Look up any stock</h3>
+            <p>Type a ticker and get a verdict on which way the evidence points: news catalysts, trend, analyst consensus, earnings history, insider buying and short interest, each shown with its weight.</p>
+          </div>
+          <div class="shot"><img src="img/lookup.jpg" alt="Stock lookup verdict for one stock" loading="lazy" /></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="honest" class="honest">
+      <div class="wrap">
+        <h2>Built to be honest about its own results</h2>
+        <p class="lead">Most tools show you ideas. Few show you how those ideas turned out. Market Radar does.</p>
+        <div class="grid3">
+          <div class="card"><h4>Track record</h4><p>Every signal and trade idea is logged and checked 1, 5 and 20 trading days later.</p></div>
+          <div class="card"><h4>Open method</h4><p>The research behind every rule and weight is published inside the app, with references.</p></div>
+          <div class="card"><h4>No fake odds</h4><p>Until enough ideas have played out, the app says "building history" instead of guessing a win rate.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="download" class="waitlist">
+      <div class="wrap">
+        <h2>Get Market Radar</h2>
+        <p class="lead" style="margin: 0 auto 26px">Free during the beta. Pro plans with real-time data and broker trading are coming.</p>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/Jdog1234/market-radar/releases/latest">Download for Mac or Windows</a>
+        </div>
+        <p class="note">Mac: Apple Silicon (arm64) or Intel (x64) .dmg · Windows: 64-bit installer</p>
+        <div id="waitlist" hidden>
+          <h3 style="margin-top:46px">Join the Pro waitlist</h3>
+          <form id="wlForm">
+            <input type="email" name="email" required placeholder="you@example.com" autocomplete="email" />
+            <button class="btn primary" type="submit">Join waitlist</button>
+          </form>
+          <div id="formMsg"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p><b>Market Radar</b> provides automated news analysis for education and research. It is not investment advice, and nothing on this site or in the app is a recommendation to buy or sell any security. Trading involves risk of loss. Past results, including the app's track record, do not guarantee future results.</p>
+      <p>Charts by TradingView Lightweight Charts. Market Radar is not affiliated with TradingView.</p>
+    </div>
+  </footer>
+
+  <script>
+    // Waitlist: shown only once the backend URL is configured (see market-radar-cloud/README.md).
+    const WAITLIST_URL = '';
+    if (WAITLIST_URL) {
+      document.getElementById('waitlist').hidden = false;
+      document.getElementById('wlForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = document.getElementById('formMsg');
+        msg.textContent = 'Joining…';
+        try {
+          const res = await fetch(WAITLIST_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: e.target.email.value }) });
+          msg.textContent = res.ok ? "You're on the list. We'll email you when Pro opens." : 'Something went wrong. Please try again.';
+          if (res.ok) e.target.reset();
+        } catch {
+          msg.textContent = 'Something went wrong. Please try again.';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
