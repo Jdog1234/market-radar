@@ -1,18 +1,25 @@
 // Paper trading: a simulated brokerage account filled against live prices.
 //
 // Rules (kept simple and honest):
-// - Orders fill only during regular hours (9:30–16:00 ET, weekdays). Orders placed while
-//   the market is closed wait and fill at the open, which is where real gaps bite.
-// - Market orders fill at the live price plus a small slippage (0.05%).
-// - Limit orders fill at the limit, or better if the price gapped through it.
-// - Stop orders fill at the live price once triggered (gaps make that worse, as in reality).
+// - Orders fill only during regular hours (9:30–16:00 ET, weekdays), and only on a quote from
+//   the regular session that is less than 60 s old. Orders placed while the market is closed
+//   wait and fill at the open, which is where real gaps bite.
+// - With a live bid/ask (the normal case), you pay the spread like a real account: buys fill
+//   at the ask, sells at the bid. Without one, fills use the last trade ± 0.05% slippage.
+// - Limit orders trigger when the ask (buys) or bid (sells) reaches the limit, and fill at the
+//   limit or better if the price gapped through it.
+// - Stop orders trigger on the last trade price and then fill at the ask/bid, like a stop
+//   market order (gaps make that worse, as in reality).
 // - Brackets: an entry can carry a stop-loss and a take-profit. Once the entry fills, both
 //   are placed; when one fills the other is cancelled (one-cancels-other).
+// - Any working order can be modified (price, shares, attached bracket) — the chart's drag.
 // - Shorts are allowed. Buying power = 2× equity minus open exposure (like a margin account).
 // - No commissions.
 const fs = require('fs');
 
 const SLIPPAGE = 0.0005;
+const STALE_MS = 60e3; // quotes older than this are not used for fills
+const MAX_SPREAD = 0.05; // a bid/ask wider than 5% of the price is treated as bad data
 
 function etParts(t = Date.now()) {
   const d = new Date(new Date(t).toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -24,15 +31,18 @@ function marketOpen(t = Date.now()) {
 }
 
 class PaperAccount {
-  constructor(file, startCash = 10000) {
+  // opts.clock: () => ms, for tests (defaults to the real time).
+  constructor(file, startCash = 10000, opts = {}) {
     this.file = file;
+    this.now = opts.clock || (() => Date.now());
     try {
       this.s = JSON.parse(fs.readFileSync(file, 'utf8'));
     } catch {
       this.s = null;
     }
     if (!this.s) this.reset(startCash);
-    this.last = {}; // symbol → last price seen
+    this.last = {}; // symbol → last regular-session trade price seen
+    this.q = {}; // symbol → { last, bid, ask, at, session } (latest quote)
     this.loadedAt = this.mtime();
   }
 
@@ -57,7 +67,7 @@ class PaperAccount {
   }
 
   reset(startCash = 10000) {
-    this.s = { startCash, cash: startCash, positions: {}, orders: [], fills: [], equity: [], nextId: 1, createdAt: Date.now() };
+    this.s = { startCash, cash: startCash, positions: {}, orders: [], fills: [], equity: [], nextId: 1, createdAt: this.now() };
     this.save();
   }
 
@@ -84,6 +94,34 @@ class PaperAccount {
     return Math.max(0, 2 * this.equity() - this.exposure());
   }
 
+  // The quote orders may fill against right now, or null if there is none worth trusting:
+  // missing, older than 60 s, or not from the regular session.
+  execQuote(sym) {
+    const q = this.q[sym];
+    if (!q || !(q.last > 0)) return null;
+    if (this.now() - (q.at || 0) > STALE_MS) return null;
+    if (q.session && q.session !== 'regular') return null;
+    let { bid, ask } = q;
+    if (!(bid > 0 && ask > 0 && ask >= bid && (ask - bid) / q.last <= MAX_SPREAD)) bid = ask = null;
+    return { last: q.last, bid, ask };
+  }
+
+  // What a marketable order would pay: the ask for buys, the bid for sells (or last ± slippage).
+  takePrice(sym, side, x = this.execQuote(sym)) {
+    if (!x) return null;
+    const buy = side === 'buy';
+    if (x.bid && x.ask) return buy ? x.ask : x.bid;
+    return x.last * (1 + (buy ? SLIPPAGE : -SLIPPAGE));
+  }
+
+  // Best estimate of the fill price for planning (ignores staleness and session).
+  refPrice(sym, side) {
+    const q = this.q[sym];
+    const good = q && q.bid > 0 && q.ask >= q.bid && q.last > 0 && (q.ask - q.bid) / q.last <= MAX_SPREAD;
+    if (good && (!q.session || q.session === 'regular')) return side === 'buy' ? q.ask : q.bid;
+    return this.price(sym);
+  }
+
   summary() {
     this.sync();
     const equity = this.equity();
@@ -105,7 +143,7 @@ class PaperAccount {
       history: [...this.s.orders].filter((o) => o.status !== 'working').sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0)).slice(0, 200),
       fills: [...this.s.fills].reverse().slice(0, 200),
       equityCurve: this.s.equity.slice(-1500),
-      marketOpen: marketOpen(), createdAt: this.s.createdAt,
+      marketOpen: marketOpen(this.now()), createdAt: this.s.createdAt,
     };
   }
 
@@ -119,9 +157,10 @@ class PaperAccount {
     if (!['buy', 'sell'].includes(side)) throw new Error('Side must be buy or sell');
     if (!['market', 'limit', 'stop'].includes(type)) throw new Error('Unknown order type');
     if (type !== 'market' && !(Number(price) > 0)) throw new Error(`Enter a ${type} price`);
-    const ref = type === 'market' ? this.price(symbol) : Number(price);
+    const ref = type === 'market' ? this.refPrice(symbol, side) : Number(price);
     if (!ref) throw new Error('No live price yet for this symbol. Try again in a few seconds.');
     const dir = side === 'buy' ? 1 : -1;
+    this.checkStop(symbol, side, type, ref);
     if (stopLoss != null && stopLoss !== '' && (Number(stopLoss) - ref) * dir >= 0) throw new Error(`Stop-loss must be ${dir > 0 ? 'below' : 'above'} the entry price`);
     if (takeProfit != null && takeProfit !== '' && (Number(takeProfit) - ref) * dir <= 0) throw new Error(`Take-profit must be ${dir > 0 ? 'above' : 'below'} the entry price`);
     // Only orders that add exposure need buying power.
@@ -130,7 +169,7 @@ class PaperAccount {
     if (adds * ref > this.buyingPower() + 1e-6) throw new Error(`Not enough buying power ($${this.buyingPower().toFixed(0)} available)`);
 
     const o = {
-      id: this.s.nextId++, symbol, side, qty, type, price: type === 'market' ? null : Number(price), status: 'working', createdAt: Date.now(),
+      id: this.s.nextId++, symbol, side, qty, type, price: type === 'market' ? null : Number(price), status: 'working', createdAt: this.now(),
       stopLoss: stopLoss ? Number(stopLoss) : null, takeProfit: takeProfit ? Number(takeProfit) : null, note, role: 'entry',
       refPrice: ref,
     };
@@ -145,7 +184,7 @@ class PaperAccount {
     const o = this.s.orders.find((x) => x.id === id && x.status === 'working');
     if (!o) throw new Error('Order not found or already done');
     o.status = 'cancelled';
-    o.doneAt = Date.now();
+    o.doneAt = this.now();
     this.save();
   }
 
@@ -154,30 +193,8 @@ class PaperAccount {
     this.sync();
     const p = this.s.positions[symbol];
     if (!p) throw new Error('No open position');
-    for (const o of this.s.orders) if (o.symbol === symbol && o.status === 'working' && o.role !== 'entry') Object.assign(o, { status: 'cancelled', doneAt: Date.now() });
+    for (const o of this.s.orders) if (o.symbol === symbol && o.status === 'working' && o.role !== 'entry') Object.assign(o, { status: 'cancelled', doneAt: this.now() });
     return this.place({ symbol, side: p.qty > 0 ? 'sell' : 'buy', qty: Math.abs(p.qty), type: 'market', note: 'Close position' });
-  }
-
-  // Move a working order's price (e.g. dragging a stop-loss or take-profit line).
-  // Rejects prices that would fill instantly on the wrong side of the market.
-  modify(id, price) {
-    this.sync();
-    const o = this.s.orders.find((x) => x.id === id && x.status === 'working');
-    if (!o) throw new Error('Order not found or already done');
-    price = +Number(price).toFixed(2);
-    if (!(price > 0)) throw new Error('Price must be above zero');
-    if (o.type === 'market') throw new Error('Market orders have no price to move');
-    const last = this.last[o.symbol];
-    if (last) {
-      const buy = o.side === 'buy';
-      const name = o.role === 'stop' ? 'Stop-loss' : o.role === 'target' ? 'Take-profit' : `${buy ? 'Buy' : 'Sell'} ${o.type}`;
-      // Stops sit beyond the market in the direction that triggers them; limits on the other side.
-      if (o.type === 'stop' && (buy ? price <= last : price >= last)) throw new Error(`${name} must stay ${buy ? 'above' : 'below'} the current price ($${last.toFixed(2)})`);
-      if (o.type === 'limit' && o.role === 'target' && (buy ? price >= last : price <= last)) throw new Error(`${name} must stay ${buy ? 'below' : 'above'} the current price ($${last.toFixed(2)})`);
-    }
-    o.price = price;
-    this.save();
-    return o;
   }
 
   // Move a position's protective orders.
@@ -185,38 +202,86 @@ class PaperAccount {
     this.sync();
     for (const o of this.s.orders) {
       if (o.symbol !== symbol || o.status !== 'working') continue;
-      if (o.role === 'stop' && stopLoss) o.price = Number(stopLoss);
-      if (o.role === 'target' && takeProfit) o.price = Number(takeProfit);
+      if (o.role === 'stop' && stopLoss) this.modify(o.id, { price: stopLoss });
+      if (o.role === 'target' && takeProfit) this.modify(o.id, { price: takeProfit });
     }
+  }
+
+  // A stop that is already through the market would fill at once: that's a market order.
+  checkStop(symbol, side, type, price) {
+    if (type !== 'stop') return;
+    const cur = this.q[symbol]?.last ?? this.price(symbol);
+    if (!cur) return;
+    if (side === 'buy' && price <= cur) throw new Error(`A buy stop must be above the current price (${cur.toFixed(2)})`);
+    if (side === 'sell' && price >= cur) throw new Error(`A sell stop must be below the current price (${cur.toFixed(2)})`);
+  }
+
+  // Change a working order: { price, qty, stopLoss, takeProfit } (the last two only for an
+  // entry that hasn't filled yet; null removes them). Used when a line is dragged on the chart.
+  modify(id, changes = {}) {
+    this.sync();
+    const o = this.s.orders.find((x) => x.id === id && x.status === 'working');
+    if (!o) throw new Error('Order not found or already done');
+    const next = { price: o.price, qty: o.qty, stopLoss: o.stopLoss ?? null, takeProfit: o.takeProfit ?? null };
+    if (changes.price != null) {
+      if (o.type === 'market') throw new Error("A market order has no price to change");
+      const p = Number(changes.price);
+      if (!(p > 0 && Number.isFinite(p))) throw new Error('Enter a valid price');
+      next.price = +p.toFixed(p >= 1 ? 2 : 4);
+    }
+    if (changes.qty != null) {
+      const q = Math.floor(Number(changes.qty));
+      if (!(q > 0)) throw new Error('Quantity must be at least 1 share');
+      if (o.role !== 'entry' && q > Math.abs(this.s.positions[o.symbol]?.qty || 0)) throw new Error('A stop-loss or take-profit cannot be larger than the position');
+      next.qty = q;
+    }
+    for (const k of ['stopLoss', 'takeProfit']) {
+      if (!(k in changes)) continue;
+      if (o.role !== 'entry') throw new Error('Only an entry order carries a bracket; move the stop-loss or take-profit order itself');
+      const v = changes[k] === null || changes[k] === '' ? null : Number(changes[k]);
+      if (v !== null && !(v > 0 && Number.isFinite(v))) throw new Error('Enter a valid price');
+      next[k] = v === null ? null : +v.toFixed(v >= 1 ? 2 : 4);
+    }
+    this.checkStop(o.symbol, o.side, o.type, next.price);
+    if (o.role === 'entry') {
+      const dir = o.side === 'buy' ? 1 : -1;
+      const ref = o.type === 'market' ? o.refPrice : next.price;
+      if (next.stopLoss != null && (next.stopLoss - ref) * dir >= 0) throw new Error(`Stop-loss must be ${dir > 0 ? 'below' : 'above'} the entry price`);
+      if (next.takeProfit != null && (next.takeProfit - ref) * dir <= 0) throw new Error(`Take-profit must be ${dir > 0 ? 'above' : 'below'} the entry price`);
+      const cur = this.s.positions[o.symbol]?.qty || 0;
+      const adds = Math.sign(cur) !== -dir ? next.qty : Math.max(0, next.qty - Math.abs(cur));
+      if (adds * (ref || 0) > this.buyingPower() + 1e-6) throw new Error(`Not enough buying power ($${this.buyingPower().toFixed(0)} available)`);
+    }
+    Object.assign(o, next, { modifiedAt: this.now() });
     this.save();
+    this.tick({}); // a limit moved through the market fills right away
+    return o;
   }
 
   // ---- matching ----
-  // quotes: symbol → { last }. Returns true if anything filled.
+  // quotes: symbol → { last, bid, ask, at, session }. Returns true if anything changed.
   tick(quotes) {
     this.sync();
-    this.book = this.book || {};
+    const now = this.now();
     for (const [sym, q] of Object.entries(quotes)) {
-      if (q?.last) this.last[sym] = q.last;
-      // Real bid/ask (when the data source has them) make fills match what a broker would give.
-      if (q?.bid > 0 && q?.ask >= q.bid && q.at && Date.now() - q.at < 60e3) this.book[sym] = { bid: q.bid, ask: q.ask };
-      else delete this.book[sym];
+      if (!(q?.last > 0)) continue;
+      this.q[sym] = { last: q.last, bid: q.bid ?? null, ask: q.ask ?? null, at: q.at ?? now, session: q.session ?? null };
+      this.last[sym] = q.last;
     }
-    const open = marketOpen();
+    const open = marketOpen(now);
     let changed = false;
     if (open) {
       for (const o of this.s.orders) {
         if (o.status !== 'working') continue;
-        const px = this.last[o.symbol];
-        if (!px) continue;
+        const x = this.execQuote(o.symbol);
+        if (!x) continue;
         const buy = o.side === 'buy';
-        const book = this.book[o.symbol];
-        // Buys pay the ask, sells get the bid; without a quote book, last ± slippage.
-        const take = book ? (buy ? book.ask : book.bid) : px * (1 + (buy ? SLIPPAGE : -SLIPPAGE));
+        const take = this.takePrice(o.symbol, o.side, x); // ask for buys, bid for sells
+        const touch = x.bid && x.ask ? (buy ? x.ask : x.bid) : x.last; // what a limit is compared with
         let fill = null;
         if (o.type === 'market') fill = take;
-        else if (o.type === 'limit' && (buy ? take <= o.price : take >= o.price)) fill = buy ? Math.min(o.price, take) : Math.max(o.price, take);
-        else if (o.type === 'stop' && (buy ? px >= o.price : px <= o.price)) fill = take;
+        else if (o.type === 'limit' && (buy ? touch <= o.price : touch >= o.price)) fill = buy ? Math.min(o.price, take) : Math.max(o.price, take);
+        else if (o.type === 'stop' && (buy ? x.last >= o.price : x.last <= o.price)) fill = take;
         if (fill != null) {
           this.fill(o, fill);
           changed = true;
@@ -225,9 +290,11 @@ class PaperAccount {
     }
     // Record equity about once a minute (while there is anything to track).
     const lastPt = this.s.equity.at(-1);
-    if (!lastPt || Date.now() - lastPt.t > 60e3) {
-      if (open || !lastPt) this.s.equity.push({ t: Date.now(), v: +this.equity().toFixed(2) });
-      changed = true;
+    if (!lastPt || now - lastPt.t > 60e3) {
+      if (open || !lastPt) {
+        this.s.equity.push({ t: now, v: +this.equity().toFixed(2) });
+        changed = true;
+      }
     }
     if (changed) this.save();
     return changed;
@@ -236,31 +303,31 @@ class PaperAccount {
   fill(o, price) {
     price = +price.toFixed(4);
     const dir = o.side === 'buy' ? 1 : -1;
-    const pos = this.s.positions[o.symbol] || { qty: 0, avg: 0, openedAt: Date.now() };
+    const pos = this.s.positions[o.symbol] || { qty: 0, avg: 0, openedAt: this.now() };
     let realized = null;
     const before = pos.qty;
     const signed = dir * o.qty;
     if (before === 0 || Math.sign(before) === dir) {
       pos.avg = (pos.avg * Math.abs(before) + price * o.qty) / (Math.abs(before) + o.qty);
       pos.qty = before + signed;
-      if (before === 0) pos.openedAt = Date.now();
+      if (before === 0) pos.openedAt = this.now();
     } else {
       const closing = Math.min(Math.abs(before), o.qty);
       realized = (price - pos.avg) * closing * Math.sign(before);
       pos.qty = before + signed;
       if (Math.sign(pos.qty) === dir) {
         pos.avg = price; // flipped through zero: the remainder opens a new position
-        pos.openedAt = Date.now();
+        pos.openedAt = this.now();
       }
     }
     this.s.cash -= signed * price;
-    Object.assign(o, { status: 'filled', fillPrice: price, doneAt: Date.now() });
-    this.s.fills.push({ at: Date.now(), orderId: o.id, symbol: o.symbol, side: o.side, qty: o.qty, price, pnl: realized != null ? +realized.toFixed(2) : null, role: o.role });
+    Object.assign(o, { status: 'filled', fillPrice: price, doneAt: this.now() });
+    this.s.fills.push({ at: this.now(), orderId: o.id, symbol: o.symbol, side: o.side, qty: o.qty, price, pnl: realized != null ? +realized.toFixed(2) : null, role: o.role });
 
     if (pos.qty === 0) {
       delete this.s.positions[o.symbol];
       // Flat: any leftover stop/target for this symbol is no longer needed.
-      for (const x of this.s.orders) if (x.symbol === o.symbol && x.status === 'working' && x.role !== 'entry') Object.assign(x, { status: 'cancelled', doneAt: Date.now() });
+      for (const x of this.s.orders) if (x.symbol === o.symbol && x.status === 'working' && x.role !== 'entry') Object.assign(x, { status: 'cancelled', doneAt: this.now() });
     } else {
       if (o.note && o.role === 'entry') pos.note = o.note;
       this.s.positions[o.symbol] = pos;
@@ -277,11 +344,11 @@ class PaperAccount {
         if (o.stopLoss) o.stopLoss = +(o.stopLoss + shift).toFixed(2);
         if (o.takeProfit) o.takeProfit = +(o.takeProfit + shift).toFixed(2);
       }
-      if (o.stopLoss) this.s.orders.push({ id: this.s.nextId++, symbol: o.symbol, side: exitSide, qty: o.qty, type: 'stop', price: o.stopLoss, status: 'working', createdAt: Date.now(), role: 'stop', group, parent: o.id });
-      if (o.takeProfit) this.s.orders.push({ id: this.s.nextId++, symbol: o.symbol, side: exitSide, qty: o.qty, type: 'limit', price: o.takeProfit, status: 'working', createdAt: Date.now(), role: 'target', group, parent: o.id });
+      if (o.stopLoss) this.s.orders.push({ id: this.s.nextId++, symbol: o.symbol, side: exitSide, qty: o.qty, type: 'stop', price: o.stopLoss, status: 'working', createdAt: this.now(), role: 'stop', group, parent: o.id });
+      if (o.takeProfit) this.s.orders.push({ id: this.s.nextId++, symbol: o.symbol, side: exitSide, qty: o.qty, type: 'limit', price: o.takeProfit, status: 'working', createdAt: this.now(), role: 'target', group, parent: o.id });
     }
     if (o.group) {
-      for (const x of this.s.orders) if (x.group === o.group && x.id !== o.id && x.status === 'working') Object.assign(x, { status: 'cancelled', doneAt: Date.now() });
+      for (const x of this.s.orders) if (x.group === o.group && x.id !== o.id && x.status === 'working') Object.assign(x, { status: 'cancelled', doneAt: this.now() });
     }
   }
 

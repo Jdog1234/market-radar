@@ -11,7 +11,7 @@ A desktop app for Mac and Windows (64-bit). It reads about 3,000 headlines from 
 
 **Trade ideas:** concrete plans with entry, stop (1.5× the stock's normal daily move), target (2× the risk), time frame, and position size for your account. The win rate shown is measured from the app's own past trade ideas, never guessed.
 
-**Paper trading:** practice with fake money on live prices. You get a TradingView-style candlestick chart (1m to 1W, including pre- and after-market), an order ticket with market, limit and stop orders plus an attached stop-loss and take-profit, live positions and P&L, order history, and an equity curve. Every Trade idea has a **Paper trade this** button that fills in the ticket for you.
+**Paper trading:** practice with fake money on live, streaming prices, in a TradingView-style workspace: candles, bars or line (1m to 1W, including pre- and after-market), VWAP / EMA 9 / EMA 21 / SMA 50 / SMA 200 / volume, horizontal and trend lines, a watchlist with live prices, and floating BUY / SELL buttons showing the bid, ask and spread. Orders, stop-losses and take-profits appear as lines on the chart that you can drag to move or × to cancel; right-click the chart to place a limit or stop at that price. Fills are realistic: buys pay the ask, sells get the bid. The Paper Trading panel underneath has positions, orders, history and an account page with an equity curve. Every Trade idea has a **Paper trade this** button that fills in the ticket for you.
 
 **Track record:** every scan's signals are logged and checked 1, 5 and 20 trading days later, so you can see how often the calls were actually right.
 
@@ -88,7 +88,9 @@ Code layout:
 - `engine/tracker.js`: signal track record
 - `engine/polygon.js`, `engine/config.js`: licensed data provider and data settings
 - `engine/account.js`: sign-in and plan status (Supabase + the cloud backend)
-- `engine/paper.js`, `engine/quotes.js`: paper-trading account (orders, fills, brackets) and live quotes and candles
+- `engine/paper.js`: paper-trading account (orders, bid/ask fills, brackets, modify); tests in `scripts/test-paper.js`
+- `engine/stream.js`: live prices from Yahoo Finance's streaming websocket (hand-written websocket + protobuf decoder, no dependencies); tests in `scripts/test-stream.js`
+- `engine/quotes.js`: CNBC quotes (fallback when the stream is down) and chart candles
 - `renderer/vendor/`: TradingView Lightweight Charts 4.2.3 (Apache-2.0)
 - `main.js`: launcher and auto-updater; `app-main.js`: the app itself (updatable)
 - `renderer/`: the UI
