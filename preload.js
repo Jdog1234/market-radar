@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld('radar', {
     billing: () => ipcRenderer.invoke('account:billing'),
     onStatus: (fn) => ipcRenderer.on('account:status', (_e, s) => fn(s)),
   },
+  learn: {
+    stats: () => ipcRenderer.invoke('learn:stats'),
+    puzzle: (opts) => ipcRenderer.invoke('learn:puzzle', opts),
+    example: (id) => ipcRenderer.invoke('learn:example', id),
+  },
   search: (q) => ipcRenderer.invoke('stock:search', q),
   lookup: (sym) => ipcRenderer.invoke('stock:lookup', sym),
   trackRecord: () => ipcRenderer.invoke('track:get'),

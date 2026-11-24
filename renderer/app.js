@@ -285,7 +285,7 @@ let acct = { enabled: false, paywall: false, plan: 'free' };
 const isPro = () => !acct.paywall || acct.plan === 'pro';
 const locked = (name) => !isPro() && PRO_VIEWS[name];
 const FREE_ORDERS = 5;
-const PRO_PITCH = 'Pro unlocks Before the move, Trade ideas, Stock lookup, up to 4 charts at once and unlimited paper orders.';
+const PRO_PITCH = 'Pro unlocks Before the move, Trade ideas, Stock lookup, real trading through your broker, up to 4 charts at once, unlimited practice orders and unlimited candle puzzles.';
 
 function showView(name) {
   if (locked(name)) {
@@ -310,6 +310,7 @@ function showView(name) {
   $$('#nav button').forEach((x) => x.classList.toggle('active', x.dataset.view === name));
   $$('.view').forEach((v) => v.classList.toggle('hidden', v.id !== `view-${name}`));
   if (name === 'track') renderTrack();
+  if (window.onLearnView) window.onLearnView(name);
   if (name === 'paper') enterPaper();
   else {
     document.body.classList.remove('paper-mode');

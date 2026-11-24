@@ -15,6 +15,7 @@ const { Account } = require('./engine/account');
 const { YahooStream } = require('./engine/stream');
 const { Alerts } = require('./engine/alerts');
 const { AlpacaAccount } = require('./engine/alpaca');
+const patterns = require('./engine/patterns');
 
 const DEFAULTS = {
   watchlist: ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'AMD', 'GOOGL'],
@@ -228,6 +229,44 @@ const paperDo = async (fn) => {
   send('paper:update', out);
   return out;
 };
+
+// ---- Learn: candlestick patterns measured on real daily history ----
+// The dataset (~100 large US stocks, 2 years of daily bars) is cached on disk for 12 hours.
+let learn = null; // { dataset, result, at }
+let learnLoading = null;
+const learnFile = () => path.join(dataDir(), 'learn-cache.json');
+async function ensureLearn() {
+  if (learn && Date.now() - learn.at < 12 * 3600e3) return learn;
+  if (learnLoading) return learnLoading;
+  learnLoading = (async () => {
+    let cached = readJson(learnFile(), null);
+    if (!cached || Date.now() - cached.at > 12 * 3600e3) {
+      try {
+        cached = { at: Date.now(), dataset: await patterns.loadDataset() };
+        fs.writeFileSync(learnFile(), JSON.stringify(cached));
+      } catch (e) {
+        if (!cached) throw e; // offline: an older copy is better than nothing
+      }
+    }
+    learn = { dataset: cached.dataset, result: patterns.scan(cached.dataset), at: cached.at };
+    return learn;
+  })();
+  try {
+    return await learnLoading;
+  } finally {
+    learnLoading = null;
+  }
+}
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+// Free plan (paywall on): 10 puzzles a day.
+const FREE_PUZZLES = 10;
+function puzzleAllowance() {
+  const st = account.status();
+  const today = new Date().toISOString().slice(0, 10);
+  if (settings.puzzleDay !== today) Object.assign(settings, { puzzleDay: today, puzzleCount: 0 });
+  const limit = st.paywall && st.plan !== 'pro' ? FREE_PUZZLES : null;
+  return { limit, used: settings.puzzleCount || 0, left: limit == null ? null : Math.max(0, limit - (settings.puzzleCount || 0)) };
+}
 
 // Track-record evaluation re-downloads price history, so cache it for a few hours.
 async function trackRecord(force = false) {
@@ -444,6 +483,37 @@ function start(launcher) {
   ipcMain.handle('account:signout', () => account.signOut());
   ipcMain.handle('account:upgrade', async (_e, interval) => shell.openExternal(await account.checkoutUrl(interval === 'year' ? 'year' : 'month')));
   ipcMain.handle('account:billing', async () => shell.openExternal(await account.portalUrl()));
+  ipcMain.handle('learn:stats', async () => {
+    const { result } = await ensureLearn();
+    return { patterns: patterns.PATTERNS, stats: result.stats, baseline: result.baseline, symbols: result.symbols, from: result.from, to: result.to, horizon: result.horizon, allowance: puzzleAllowance() };
+  });
+  // A random real occurrence (optionally of one pattern), with 4 name choices.
+  ipcMain.handle('learn:puzzle', async (_e, opts = {}) => {
+    const a = puzzleAllowance();
+    if (a.left === 0) throw new Error(`You've played today's ${FREE_PUZZLES} free puzzles. Pro gives you unlimited puzzles, or come back tomorrow.`);
+    const { dataset, result } = await ensureLearn();
+    const usable = patterns.PATTERNS.filter((p) => result.stats[p.id].n >= 5 && (!opts.patternId || p.id === opts.patternId));
+    if (!usable.length) throw new Error('No real examples of that pattern in the data yet');
+    // Pick the pattern first (so rare ones come up too), then a real occurrence of it, with
+    // enough bars after it to show what happened.
+    const p = pick(usable);
+    const hits = result.hits.filter((h) => h.id === p.id && h.i >= 50);
+    const w = patterns.windowFor(dataset, pick(hits));
+    const others = patterns.PATTERNS.filter((x) => x.id !== p.id && !(x.id.includes('doji') && p.id.includes('doji')));
+    const distract = [];
+    const prefer = others.filter((x) => x.bars === p.bars).sort(() => Math.random() - 0.5);
+    for (const x of [...prefer, ...others.sort(() => Math.random() - 0.5)]) if (distract.length < 3 && !distract.includes(x.id)) distract.push(x.id);
+    settings.puzzleCount = (settings.puzzleCount || 0) + 1;
+    fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
+    return { ...w, choices: [p.id, ...distract].sort(() => Math.random() - 0.5), stat: result.stats[p.id], baseline: result.baseline, horizon: result.horizon, allowance: puzzleAllowance() };
+  });
+  // A real example of a pattern for the library (doesn't count as a puzzle).
+  ipcMain.handle('learn:example', async (_e, id) => {
+    const { dataset, result } = await ensureLearn();
+    const hits = result.hits.filter((h) => h.id === id && h.i >= 50);
+    if (!hits.length) throw new Error('No real example in the data yet');
+    return patterns.windowFor(dataset, pick(hits.slice(-60)), 30, 10);
+  });
   ipcMain.handle('guide:get', () => fs.readFileSync(path.join(__dirname, 'RESEARCH.md'), 'utf8'));
   ipcMain.handle('open:external', (_e, url) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);

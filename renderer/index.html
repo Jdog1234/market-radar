@@ -21,6 +21,11 @@
       <button data-view="earnings">Earnings</button>
       <button data-view="track">Track record</button>
       <button data-view="guide">Research guide</button>
+      <div class="nav-label">Learn</div>
+      <button data-view="puzzles">Candle puzzles</button>
+      <button data-view="patterns">Pattern library</button>
+      <button data-view="school">Trading school</button>
+      <div class="nav-label"></div>
       <button data-view="settings">Settings</button>
     </nav>
     <div class="side-foot"><div id="stats"></div><div id="planBadge" class="ver"></div><div id="version" class="ver"></div></div>
@@ -250,6 +255,30 @@
 
     <section id="view-guide" class="view hidden"><article id="guide" class="md"></article></section>
 
+    <section id="view-puzzles" class="view hidden">
+      <div class="pz-head">
+        <div><h2>Candle puzzles</h2><p class="muted small">Real charts from real stocks, cut off right where a candlestick pattern forms. Name the pattern, then call where the price was 5 trading days later. The stock and date are revealed after you answer.</p></div>
+        <div class="pz-score" id="pzScore"></div>
+      </div>
+      <div class="pz-bar"><label class="small muted">Practice <select id="pzFilter"><option value="">All patterns</option></select></label><span id="pzLeft" class="small muted"></span></div>
+      <div class="pz-main">
+        <div class="card pz-chartcard"><div class="pz-tag" id="pzTag">Mystery stock · daily candles</div><div id="pzChart" class="pz-chart"></div></div>
+        <div class="card pz-side" id="pzSide"><div class="empty">Loading real price history…</div></div>
+      </div>
+      <details class="card pz-mystats" id="pzMyStats"><summary>Your stats by pattern</summary><div id="pzMyStatsBody"></div></details>
+    </section>
+
+    <section id="view-patterns" class="view hidden">
+      <h2>Pattern library</h2>
+      <p class="muted small" id="plIntro">The classic candlestick patterns: what they look like, what they're supposed to mean, how traders use them, and what actually happened after them in real data.</p>
+      <div id="plGrid" class="pl-grid"><div class="empty">Loading…</div></div>
+      <div id="plDetail" class="pl-detail hidden"></div>
+    </section>
+
+    <section id="view-school" class="view hidden">
+      <div id="school"></div>
+    </section>
+
     <section id="view-settings" class="view hidden">
       <h2>Settings</h2>
       <div class="card about" id="acctCard" style="margin-bottom:16px"></div>
@@ -310,5 +339,7 @@
   <div id="drawer" class="drawer hidden"><div class="drawer-inner"></div></div>
   <script src="vendor/lightweight-charts.standalone.production.js"></script>
   <script src="app.js"></script>
+  <script src="school.js"></script>
+  <script src="learn.js"></script>
 </body>
 </html>
