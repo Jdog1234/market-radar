@@ -73,7 +73,8 @@ async function checkForUpdates() {
   if (status.state === 'checking' || status.state === 'downloading') return status;
   setStatus({ state: 'checking' });
   try {
-    const manifest = JSON.parse((await download(FEED)).toString('utf8'));
+    // Query string sidesteps GitHub's few-minute cache of the "latest" redirect.
+    const manifest = JSON.parse((await download(`${FEED}?t=${Date.now()}`)).toString('utf8'));
     const installed = readState();
     // Newest version we already have: running now, or downloaded and waiting for a restart.
     const waiting = installed && !installed.broken && newer(installed.version, code.version) ? installed.version : null;

@@ -64,6 +64,16 @@ async function main() {
     }
   }
 
+  else if (!flag('--dry-run')) {
+    // Code-only release: carry the previous installers forward so the "latest" release
+    // page always has downloads. They update themselves to this version on first launch.
+    const carry = path.join(DIST, 'carry');
+    fs.rmSync(carry, { recursive: true, force: true });
+    const prev = out(`gh release view --repo ${REPO} --json tagName --jq .tagName`);
+    run(`gh release download ${prev} --repo ${REPO} --pattern "*.dmg" --pattern "*.exe" --dir "${carry}"`);
+    for (const f of fs.readdirSync(carry)) assets.push(path.join(carry, f));
+  }
+
   if (flag('--dry-run')) {
     console.log('\n(dry run) Would publish:\n' + assets.map((a) => '  ' + path.basename(a)).join('\n'));
     return;
