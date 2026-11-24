@@ -15,6 +15,8 @@ A desktop app for Mac and Windows (64-bit). It reads about 3,000 headlines from 
 
 **Trading tools:** size orders by shares, dollars, or the % of your equity you'd lose at the stop-loss; set take-profits at 1R–3R in one click; Breakeven, Trailing stop (0.5–5%), Reverse and Close on every position, plus Close all / Cancel all; right-click the chart to set an alert, stop-loss or take-profit at that price; price alerts with desktop notifications (they work even when the paper page isn't open); keyboard shortcuts (press **?** on the paper page).
 
+**Real trading (Pro):** connect your own [Alpaca](https://alpaca.markets) brokerage account in Settings → Broker (paper/practice or live), then pick it with the account switch on the trading screen. Orders, brackets, drag-to-move stop-loss/take-profit, breakeven, trailing stops and close/reverse go to Alpaca. Live orders always ask for confirmation, the main process refuses unconfirmed live orders, and orders above a per-order dollar limit (default $5,000) are refused. Keys are encrypted with the OS keychain. The app never places orders by itself. Tests: `node scripts/test-alpaca.js` (runs against `scripts/fake-alpaca.js`).
+
 **Themes:** Settings → Appearance has 7 color themes (including Light), any accent color, and candle colors (including a color-blind-friendly blue/orange).
 
 **Track record:** every scan's signals are logged and checked 1, 5 and 20 trading days later, so you can see how often the calls were actually right.
@@ -93,6 +95,7 @@ Code layout:
 - `engine/polygon.js`, `engine/config.js`: licensed data provider and data settings
 - `engine/account.js`: sign-in and plan status (Supabase + the cloud backend)
 - `engine/paper.js`: paper-trading account (orders, bid/ask fills, brackets, modify); tests in `scripts/test-paper.js`
+- `engine/alpaca.js`: real trading through the user's Alpaca account (same methods as the paper account)
 - `engine/alerts.js`: price alerts (saved to disk, checked on every live quote)
 - `engine/stream.js`: live prices from Yahoo Finance's streaming websocket (hand-written websocket + protobuf decoder, no dependencies); tests in `scripts/test-stream.js`
 - `engine/quotes.js`: CNBC quotes (fallback when the stream is down) and chart candles

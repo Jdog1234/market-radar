@@ -144,6 +144,7 @@
         <div class="tv-sep"></div>
         <button class="tv-btn" id="ptKeysBtn" title="Keyboard shortcuts (press ?)">?</button>
         <div class="tv-spacer"></div>
+        <div class="tv-group tv-acctsel" id="ptAcctSel" title="Which account the orders go to"></div>
         <div id="ptFeed" class="tv-feed"></div>
         <div id="ptMkt" class="tv-feed"></div>
       </div>
@@ -175,7 +176,7 @@
           <div class="tv-bottom" id="ptBottom">
             <div class="tv-resize" id="ptResize"></div>
             <div class="tv-bhead">
-              <b class="tv-btitle">Paper Trading</b>
+              <b class="tv-btitle" id="ptTitle">Paper Trading</b>
               <div class="tv-tabs" id="ptTabs">
                 <button data-t="pos" class="on">Positions</button><button data-t="ord">Orders</button>
                 <button data-t="hist">History</button><button data-t="alerts">Alerts</button><button data-t="acct">Account</button>
@@ -269,6 +270,11 @@
         <div class="theme-label">Candle colors</div>
         <div id="themeCandles" class="theme-row"></div>
         <button type="button" class="btn ghost" id="themeReset" style="margin-top:12px">Reset to default</button>
+      </div>
+      <div class="card about" id="brokerCard" style="margin-bottom:16px">
+        <h3>Broker: trade for real</h3>
+        <p class="small muted">Connect your own <a data-url="https://alpaca.markets">Alpaca</a> brokerage account to send real orders from the trading screen (charts, order panel, drag-to-move stop-loss and take-profit all work the same). Start with Alpaca's free <b>paper</b> (practice) account. <b>Live trading uses real money and you can lose it.</b> Market Radar's signals are research, not financial advice, and the app never trades on its own.</p>
+        <div id="brokerBody"></div>
       </div>
       <div class="card about" style="margin-bottom:16px">
         <h3>Licensed market data</h3>

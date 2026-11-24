@@ -1445,7 +1445,7 @@ $('#ptCtx').addEventListener('click', async (e) => {
   }
   const [side, type, price] = parts;
   try {
-    const d = await radar.paper.order({ symbol: pt.sym, side, qty: Math.max(1, Math.floor(+$('#ptQty').value || 1)), type, price: +price });
+    const d = await sendOrder({ symbol: pt.sym, side, qty: Math.max(1, Math.floor(+$('#ptQty').value || 1)), type, price: +price });
     applyPaper(d);
     toast(`${side === 'buy' ? 'Buy' : 'Sell'} ${type} placed @ ${fmtPx(+price)}`);
   } catch (err) {
@@ -1523,7 +1523,7 @@ function renderAcct() {
   if (!a) return;
   const it = (label, val, c = '', opt = false) => `<span class="${opt ? 'opt' : ''}">${label}<b class="${c}">${val}</b></span>`;
   $('#ptAcct').innerHTML = it('Equity', usd(a.equity)) + it('Open P&L', sgnUsd(a.unrealized), cls(a.unrealized)) +
-    it('Total', `${sgnUsd(a.totalPnl)} (${pct(a.totalPct, 2)})`, cls(a.totalPnl)) + it('Buying power', usd(a.buyingPower), '', true);
+    it(a.broker ? 'Today' : 'Total', `${sgnUsd(a.totalPnl)} (${pct(a.totalPct, 2)})`, cls(a.totalPnl)) + it('Buying power', usd(a.buyingPower), '', true);
   const n = (t, k) => `${t}${k ? `<span class="n">${k}</span>` : ''}`;
   const labels = { pos: n('Positions', a.positions.length), ord: n('Orders', a.orders.length), hist: 'History', alerts: n('Alerts', pt.alerts.filter((x) => !x.firedAt).length), acct: 'Account' };
   $$('#ptTabs button').forEach((b) => (b.innerHTML = labels[b.dataset.t]));
@@ -1592,11 +1592,16 @@ function renderAcctTab() {
   const r = (k, v, c = '') => `<div class="r"><span>${k}</span><b class="${c}">${v}</b></div>`;
   const box = $('#ptAcctStats');
   const typing = box.contains(document.activeElement);
-  if (!typing) {
+  if (!typing && a.broker) {
+    box.innerHTML = r('Broker', `Alpaca ${a.env === 'live' ? '<span class="broker-live">LIVE</span>' : 'paper'}${a.accountNumber ? ` · ${esc(a.accountNumber)}` : ''}`) + r('Equity', usd(a.equity)) + r('Cash', usd(a.cash)) +
+      r('Buying power', usd(a.buyingPower)) + r('Open P&L', sgnUsd(a.unrealized), cls(a.unrealized)) + r("Today's P&L", `${sgnUsd(a.totalPnl)} (${pct(a.totalPct, 2)})`, cls(a.totalPnl)) +
+      r('Max per order', pt.mode?.maxOrderValue ? usd(pt.mode.maxOrderValue) : 'no limit') +
+      `<div class="muted small" style="margin-top:6px">Deposits, withdrawals and statements are on <a data-url="https://app.alpaca.markets">alpaca.markets</a>.${a.blocked ? ' <b class="down">Alpaca has blocked trading on this account.</b>' : ''}</div>`;
+  } else if (!typing) {
     box.innerHTML = r('Starting cash', usd(a.startCash)) + r('Equity', usd(a.equity)) + r('Cash', usd(a.cash)) + r('Buying power', usd(a.buyingPower)) +
       r('Open P&L', sgnUsd(a.unrealized), cls(a.unrealized)) + r('Realized P&L', sgnUsd(a.realized), cls(a.realized)) +
       r('Total P&L', `${sgnUsd(a.totalPnl)} (${pct(a.totalPct, 2)})`, cls(a.totalPnl)) + r('Closed trades', a.closedTrades || 0) +
-      r('Win rate', a.winRate != null ? `${a.winRate.toFixed(0)}%` : '—') + r('Since', new Date(a.createdAt).toLocaleDateString()) +
+      r('Win rate', a.winRate != null ? `${a.winRate.toFixed(0)}%` : '—') + r('Since', a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—') +
       `<div class="reset"><input id="ptResetCash" type="number" min="100" step="100" value="${Math.round(settingsCache?.accountSize || a.startCash)}" /><button class="btn ghost" id="ptReset">Reset account</button></div>
        <div class="muted small" style="margin-top:6px">Reset clears all positions, orders and history.</div>`;
   }
@@ -1728,7 +1733,7 @@ function syncTicket() {
     if (sl && tp) est += `<br>Reward : risk = <b>${(Math.abs(tp - px) / Math.abs(px - sl)).toFixed(1)} : 1</b>`;
     if (pt.acct) est += `<br>Buying power: $${pt.acct.buyingPower.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   }
-  if (!isPro() && pt.acct) {
+  if (!isPro() && pt.acct && !brokerMode()) {
     const open = pt.acct.orders.length;
     est += `${est ? '<br>' : ''}<span class="${open >= FREE_ORDERS ? 'down' : 'muted'}">Free plan: ${open} of ${FREE_ORDERS} open orders</span> · <a data-goto="settings" style="cursor:pointer">Go Pro for unlimited</a>`;
   }
@@ -1768,7 +1773,9 @@ function applyPaper(d) {
   if (d.quotes) pt.quotes = { ...pt.quotes, ...d.quotes };
   if (d.feed) pt.feed = d.feed;
   if (d.alerts) pt.alerts = d.alerts;
+  if (d.mode) pt.mode = d.mode;
   if (!paperVisible()) return;
+  renderAcctSel();
   renderAcct();
   renderQuoteHead();
   renderQuick();
@@ -1799,6 +1806,54 @@ function applyTick(d) {
   for (const m of visibleMinis()) if (d.quotes?.[m.sym]) miniLive(m, d.quotes[m.sym]);
   renderFeed();
 }
+
+// ---- real trading (broker) ----
+const brokerMode = () => pt.mode?.kind === 'broker';
+const liveMode = () => brokerMode() && pt.mode.env === 'live';
+// Every order goes through here. With a live broker account the user confirms each one; the
+// main process refuses live orders that weren't confirmed.
+async function sendOrder(o) {
+  if (liveMode()) {
+    const q = pt.quotes[o.symbol];
+    const px = o.type === 'market' ? (o.side === 'buy' ? q?.ask : q?.bid) || q?.last : o.price;
+    const value = px ? ` (about ${usd(px * o.qty)})` : '';
+    const brk = o.stopLoss || o.takeProfit ? `\nStop-loss: ${o.stopLoss ? fmtPx(o.stopLoss) : 'none'} · Take-profit: ${o.takeProfit ? fmtPx(o.takeProfit) : 'none'}` : '';
+    const what = `${o.side === 'buy' ? 'BUY' : 'SELL'} ${o.qty} ${o.symbol} ${o.type === 'market' ? 'at market' : `${o.type} @ ${fmtPx(o.price)}`}${value}`;
+    if (!confirm(`LIVE ORDER: REAL MONEY\n\n${what}${brk}\n\nSend this order to your Alpaca account?`)) throw new Error('Order not sent');
+    o = { ...o, confirmed: true };
+  }
+  return radar.paper.order(o);
+}
+
+function renderAcctSel() {
+  const m = pt.mode;
+  if (!m) return;
+  const env = m.env === 'live' ? 'LIVE' : 'Paper';
+  $('#ptAcctSel').innerHTML = `<button data-acct="sim" class="${m.kind === 'sim' ? 'on' : ''}" title="Built-in simulator with fake money">Simulated</button>` +
+    (m.configured
+      ? `<button data-acct="broker" class="brk ${m.env === 'live' ? 'live' : ''} ${m.kind === 'broker' ? 'on' : ''}" title="Your Alpaca ${env === 'LIVE' ? 'real-money' : 'practice'} account">Alpaca ${env}${m.allowed ? '' : ' 🔒'}</button>`
+      : '<button data-acct="connect" title="Connect a broker in Settings">+ Broker</button>');
+  document.body.classList.toggle('live-trading', liveMode());
+  $('#ptTitle').textContent = m.kind === 'broker' ? `Alpaca ${m.env === 'live' ? 'LIVE' : 'Paper'}` : 'Paper Trading';
+  if (m.error && m.error !== renderAcctSel.lastErr) toast(m.error, true);
+  renderAcctSel.lastErr = m.error;
+}
+$('#ptAcctSel').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-acct]');
+  if (!b || b.classList.contains('on')) return;
+  if (b.dataset.acct === 'connect') return showView('settings');
+  if (b.dataset.acct === 'broker' && !pt.mode.allowed) {
+    const r = b.getBoundingClientRect();
+    return popMenu(r.left, r.bottom + 4, proOffer('Trading with a real broker is a Pro feature'));
+  }
+  if (b.dataset.acct === 'broker' && pt.mode.env === 'live' && !confirm('Switch to your LIVE Alpaca account? Orders from now on use real money.')) return;
+  try {
+    applyPaper(await radar.broker.select(b.dataset.acct));
+    toast(b.dataset.acct === 'sim' ? 'Trading the simulated account' : `Trading your Alpaca ${pt.mode.env === 'live' ? 'LIVE' : 'paper'} account`);
+  } catch (err) {
+    toast(errText(err), true);
+  }
+});
 
 // Open the paper-trading page with a ticket filled in (used by Trade ideas and Lookup).
 function openPaper(prefill = {}) {
@@ -2148,7 +2203,7 @@ $('#ptQuick').addEventListener('click', async (e) => {
   const side = b.dataset.quick;
   const qty = Math.max(1, Math.floor(+$('#ptQty').value || 1));
   try {
-    const d = await radar.paper.order({ symbol: pt.sym, side, qty, type: 'market' });
+    const d = await sendOrder({ symbol: pt.sym, side, qty, type: 'market' });
     applyPaper(d);
     const f = d.account.fills[0];
     toast(f && Date.now() - f.at < 5000 && f.symbol === pt.sym ? `Filled: ${f.side} ${f.qty} ${f.symbol} @ ${fmtPx(f.price)}` : `Market ${side} ${qty} ${pt.sym} placed — fills at the open`);
@@ -2192,7 +2247,7 @@ $('.pt-side').addEventListener('click', (e) => {
 $('#ptSubmit').addEventListener('click', async () => {
   const msg = $('#ptMsg');
   try {
-    const d = await radar.paper.order({
+    const d = await sendOrder({
       symbol: pt.sym, side: pt.side, qty: +$('#ptQty').value, type: $('#ptType').value, price: +$('#ptPrice').value || null,
       stopLoss: $('#ptUseSL').checked ? +$('#ptSL').value || null : null,
       takeProfit: $('#ptUseTP').checked ? +$('#ptTP').value || null : null, note: pt.note || '',
@@ -2220,7 +2275,7 @@ document.addEventListener('click', async (e) => {
   const idea = e.target.closest('[data-papertrade]');
   try {
     if (c) { e.stopPropagation(); applyPaper(await radar.paper.close(c.dataset.ptclose)); return; }
-    if (x) { e.stopPropagation(); applyPaper(await radar.paper.cancel(+x.dataset.ptcancel)); return; }
+    if (x) { e.stopPropagation(); applyPaper(await radar.paper.cancel(x.dataset.ptcancel)); return; }
     if (r) {
       const cash = +$('#ptResetCash').value;
       if (!(cash > 0)) return toast('Enter the starting cash first', true);
@@ -2316,8 +2371,8 @@ $('#ptTabBody').addEventListener('click', async (e) => {
     const [kind, sym] = act.dataset.pact.split(':');
     if (kind === 'be') return paperAct(() => radar.paper.breakeven(sym), `${sym}: stop-loss moved to breakeven`);
     if (kind === 'rev') {
-      if (!confirm(`Reverse ${sym}? This closes the position and opens the opposite one at market.`)) return;
-      return paperAct(() => radar.paper.reverse(sym), `${sym} reversed`);
+      if (!confirm(`${liveMode() ? 'LIVE, REAL MONEY: ' : ''}Reverse ${sym}? This closes the position and opens the opposite one at market.`)) return;
+      return paperAct(() => radar.paper.reverse(sym, true), `${sym} reversed`);
     }
     if (kind === 'trail') {
       const last = pt.quotes[sym]?.last || pt.acct?.positions.find((p) => p.symbol === sym)?.last;
@@ -2443,6 +2498,69 @@ $('#appearance').addEventListener('click', (e) => {
 $('#appearance').addEventListener('change', (e) => e.target.id === 'themeCustom' && setTheme({ accent: e.target.value }));
 renderAppearance();
 
+// ---------- broker connection (Alpaca) ----------
+async function renderBroker(note = '') {
+  const st = await radar.getSettings();
+  const pro = isPro();
+  const body = $('#brokerBody');
+  if (st.brokerConfigured) {
+    body.innerHTML = `<p class="small">Connected: <b>Alpaca ${st.brokerEnv === 'live' ? '<span class="broker-live">LIVE (real money)</span>' : 'paper (practice)'}</b>.
+      ${pro ? 'Pick it with the account switch at the top of the Paper trading screen.' : '<b>Trading with a broker is a Pro feature.</b>'}</p>
+      <div class="broker-form"><label class="small">Largest order allowed ($, 0 = no limit)<input type="number" id="brokerLimit" min="0" step="100" value="${st.maxOrderValue ?? 5000}" /></label></div>
+      <div class="acct-form"><button class="btn ghost" id="brokerSaveLimit">Save limit</button><button class="btn ghost" id="brokerTest">Test connection</button><button class="btn ghost" id="brokerRemove">Disconnect</button></div>
+      <div id="brokerMsg" class="small" style="margin-top:8px">${note}</div>`;
+    return;
+  }
+  body.innerHTML = `<ol class="small muted" style="margin:8px 0 0 18px;padding:0">
+      <li>Open a free account at <a data-url="https://app.alpaca.markets/signup">alpaca.markets</a> (the paper account works right away; live trading needs Alpaca to approve you).</li>
+      <li>In Alpaca, pick <b>Paper</b> or <b>Live</b> at the top left, then <b>Home → API Keys → Generate</b>.</li>
+      <li>Paste both keys here. They're encrypted with your computer's keychain and only ever sent to Alpaca.</li></ol>
+    <form class="broker-form" id="brokerForm">
+      <div class="broker-env"><label><input type="radio" name="env" value="paper" checked /> Paper (practice, fake money)</label><label><input type="radio" name="env" value="live" /> <span class="broker-live">Live (real money)</span></label></div>
+      <input type="text" name="keyId" placeholder="API key ID" autocomplete="off" spellcheck="false" required />
+      <input type="password" name="secret" placeholder="Secret key" autocomplete="off" required />
+      <div><button class="btn" type="submit">Connect</button></div>
+    </form>
+    <div id="brokerMsg" class="small" style="margin-top:8px">${note}</div>`;
+}
+const brokerMsg = (html) => $('#brokerMsg') && ($('#brokerMsg').innerHTML = html);
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'brokerForm') return;
+  e.preventDefault();
+  const f = e.target;
+  const env = f.env.value;
+  if (env === 'live' && !confirm('Connect your LIVE Alpaca account? Orders you place on it use real money, and you can lose money.')) return;
+  f.querySelector('button').disabled = true;
+  try {
+    const r = await radar.broker.setKeys({ id: f.elements.namedItem('keyId').value, secret: f.elements.namedItem('secret').value, env });
+    renderBroker(`<span class="msg-ok">Connected to Alpaca ${r.env === 'live' ? 'LIVE' : 'paper'} account ${esc(r.accountNumber || '')} (equity ${usd(r.equity || 0)}).</span>`);
+  } catch (err) {
+    brokerMsg(`<span class="msg-err">${esc(errText(err))}</span>`);
+    f.querySelector('button').disabled = false;
+  }
+});
+document.addEventListener('click', async (e) => {
+  const id = e.target.id;
+  if (!['brokerTest', 'brokerRemove', 'brokerSaveLimit'].includes(id)) return;
+  try {
+    if (id === 'brokerTest') {
+      const r = await radar.broker.test();
+      brokerMsg(`<span class="msg-ok">Working: account ${esc(r.accountNumber || '')}, equity ${usd(r.equity || 0)}${r.blocked ? ', but Alpaca has blocked trading on it' : ''}.</span>`);
+    }
+    if (id === 'brokerSaveLimit') {
+      await radar.broker.setLimit(+$('#brokerLimit').value);
+      brokerMsg('<span class="msg-ok">Saved.</span>');
+    }
+    if (id === 'brokerRemove' && confirm('Disconnect Alpaca? The keys are deleted from this computer. Your Alpaca account, positions and orders are not touched.')) {
+      applyPaper(await radar.broker.remove());
+      renderBroker('<span class="muted">Disconnected.</span>');
+    }
+  } catch (err) {
+    brokerMsg(`<span class="msg-err">${esc(errText(err))}</span>`);
+  }
+});
+renderBroker();
+
 // ---------- licensed data (Polygon) ----------
 function polyStatus(s) {
   $('#polyStatus').innerHTML = s.polygonConfigured
@@ -2483,6 +2601,7 @@ $('#licensedOnly').addEventListener('change', async (e) => {
 function renderAccount(st) {
   const was = isPro();
   acct = st;
+  if (was !== isPro()) renderBroker();
   // Plan changed (signed in, upgraded, lapsed): re-apply the chart and order limits.
   if (was !== isPro() && paperVisible()) {
     buildGrid();

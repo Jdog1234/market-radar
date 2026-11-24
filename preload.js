@@ -7,6 +7,13 @@ contextBridge.exposeInMainWorld('radar', {
   runScan: () => ipcRenderer.invoke('scan:run'),
   setPolygonKey: (k) => ipcRenderer.invoke('data:setPolygonKey', k),
   testPolygon: () => ipcRenderer.invoke('data:testPolygon'),
+  broker: {
+    setKeys: (k) => ipcRenderer.invoke('broker:setKeys', k),
+    test: () => ipcRenderer.invoke('broker:test'),
+    remove: () => ipcRenderer.invoke('broker:remove'),
+    select: (which) => ipcRenderer.invoke('broker:select', which),
+    setLimit: (v) => ipcRenderer.invoke('broker:setLimit', v),
+  },
   account: {
     status: () => ipcRenderer.invoke('account:status'),
     activate: (key) => ipcRenderer.invoke('account:activate', key),
@@ -39,7 +46,7 @@ contextBridge.exposeInMainWorld('radar', {
     protect: (sym, b) => ipcRenderer.invoke('paper:protect', sym, b),
     breakeven: (sym) => ipcRenderer.invoke('paper:breakeven', sym),
     trail: (sym, amount) => ipcRenderer.invoke('paper:trail', sym, amount),
-    reverse: (sym) => ipcRenderer.invoke('paper:reverse', sym),
+    reverse: (sym, confirmed) => ipcRenderer.invoke('paper:reverse', sym, confirmed),
     closeAll: () => ipcRenderer.invoke('paper:closeAll'),
     cancelAll: () => ipcRenderer.invoke('paper:cancelAll'),
     addAlert: (a) => ipcRenderer.invoke('alerts:add', a),

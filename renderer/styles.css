@@ -240,7 +240,7 @@ body.paper-mode .top, body.paper-mode .disclaimer { display: none; }
 .tv-symwrap input { width: 110px; text-transform: uppercase; font-weight: 700; background: var(--tv-panel); border: 1px solid var(--tv-line); color: var(--tv-text); border-radius: 6px; padding: 5px 9px; }
 .tv-symwrap input:focus { outline: none; border-color: var(--tv-blue); }
 .tv-symwrap .suggest { top: 34px; width: 300px; }
-.tv .pt-quote { display: flex; gap: 8px; align-items: baseline; white-space: nowrap; overflow: hidden; min-width: 0; }
+.tv .pt-quote { display: flex; gap: 8px; align-items: baseline; white-space: nowrap; overflow: hidden; min-width: 110px; flex-shrink: 1; }
 .tv .pt-quote b { font-size: 15px; }
 .tv-sep { width: 1px; height: 22px; background: var(--tv-line); margin: 0 2px; flex-shrink: 0; }
 .tv-group { display: flex; gap: 1px; flex-shrink: 0; }
@@ -248,7 +248,7 @@ body.paper-mode .top, body.paper-mode .disclaimer { display: none; }
 .tv-group button:hover, .tv-btn:hover, .tv-tabs button:hover { background: var(--tv-hover); }
 .tv-group button.on { color: var(--tv-blue); background: color-mix(in srgb, var(--tv-blue) 12%, transparent); }
 .tv-spacer { flex: 1; }
-.tv-feed { font-size: 11.5px; color: var(--tv-muted); white-space: nowrap; display: flex; align-items: center; gap: 5px; }
+.tv-feed { font-size: 11.5px; color: var(--tv-muted); white-space: nowrap; display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; flex-shrink: 1; }
 .tv-feed i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--tv-muted); }
 .tv-feed i.live { background: var(--tv-up); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tv-up) 20%, transparent); }
 .tv-feed i.poll { background: var(--warn); }
@@ -453,3 +453,14 @@ body.paper-mode .top, body.paper-mode .disclaimer { display: none; }
 .tv-keys kbd { display: inline-block; min-width: 18px; text-align: center; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--tv-line); background: var(--tv-bg); font: 600 11px ui-monospace, Menlo, monospace; }
 /* free plan: multi-chart layouts are Pro (clicking one offers an upgrade) */
 .tv-layout.free button:not([data-l="1"]) { opacity: 0.4; }
+
+/* ---- real trading (broker) ---- */
+.tv-acctsel button.live.on { color: #fff; background: var(--tv-down); }
+.tv-acctsel button.brk.on { color: #fff; background: var(--tv-blue); }
+body.live-trading .tv-top { box-shadow: inset 0 -2px 0 var(--tv-down); }
+body.live-trading .pt-submit::after { content: ' · LIVE'; font-weight: 800; }
+.broker-form { display: grid; gap: 8px; margin-top: 10px; max-width: 560px; }
+.broker-form input[type=text], .broker-form input[type=password], .broker-form input[type=number] { background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 7px; padding: 7px 10px; font: inherit; }
+.broker-env { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; }
+.broker-live { color: var(--down); font-weight: 700; }
+.tv-acctsel { flex-shrink: 0; }

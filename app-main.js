@@ -14,6 +14,7 @@ const polygon = require('./engine/polygon');
 const { Account } = require('./engine/account');
 const { YahooStream } = require('./engine/stream');
 const { Alerts } = require('./engine/alerts');
+const { AlpacaAccount } = require('./engine/alpaca');
 
 const DEFAULTS = {
   watchlist: ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'AMD', 'GOOGL'],
@@ -25,6 +26,10 @@ const DEFAULTS = {
   riskPct: 1,
   licensedOnly: false,
   polygonKeyEnc: '', // encrypted with the OS keychain (safeStorage); never stored in plain text
+  brokerKeyEnc: '', // Alpaca key ID + secret, encrypted the same way
+  brokerEnv: 'paper', // 'paper' (Alpaca's practice account) or 'live' (real money)
+  tradeAccount: 'sim', // which account the trading screen uses: 'sim' (built-in) or 'broker'
+  maxOrderValue: 5000, // broker orders worth more than this are refused
 };
 
 // API keys are encrypted with the operating system's secure storage before saving.
@@ -41,8 +46,8 @@ function applyDataConfig() {
 }
 // What the renderer may see about settings: never the key itself.
 const publicSettings = () => {
-  const { polygonKeyEnc, ...rest } = settings;
-  return { ...rest, polygonConfigured: !!polygonKeyEnc };
+  const { polygonKeyEnc, brokerKeyEnc, ...rest } = settings;
+  return { ...rest, polygonConfigured: !!polygonKeyEnc, brokerConfigured: !!brokerKeyEnc };
 };
 
 const dataDir = () => app.getPath('userData');
@@ -67,6 +72,8 @@ let trackCache = { at: 0, data: null };
 let paper;
 let alerts;
 let account;
+let broker = null; // AlpacaAccount when keys are saved
+let brokerError = null;
 let paperWatch = []; // symbols the paper-trading screen is showing
 let lastQuotes = {};
 const stream = new YahooStream();
@@ -75,7 +82,38 @@ const send = (ch, d) => {
   if (win && !win.isDestroyed()) win.webContents.send(ch, d);
 };
 const feed = () => ({ mode: stream.healthy() ? 'stream' : 'poll', connected: stream.connected, lastTickAt: stream.lastTickAt || null });
-const snapshot = () => ({ account: paper.summary(), quotes: lastQuotes, feed: feed(), alerts: alerts.list() });
+// Real trading needs Pro once subscriptions are on.
+const brokerAllowed = () => {
+  const st = account.status();
+  return !st.paywall || st.plan === 'pro';
+};
+// The account the trading screen is working with: the built-in simulator or the user's broker.
+const active = () => (settings.tradeAccount === 'broker' && broker && brokerAllowed() ? broker : paper);
+const tradeMode = () => ({ kind: active() === paper ? 'sim' : 'broker', broker: broker ? 'alpaca' : null, env: broker?.env || settings.brokerEnv, configured: !!broker, allowed: brokerAllowed(), error: active() === paper ? null : brokerError, maxOrderValue: settings.maxOrderValue });
+const snapshot = () => ({ account: active().summary(), quotes: lastQuotes, feed: feed(), alerts: alerts.list(), mode: tradeMode() });
+
+function buildBroker() {
+  let keys = null;
+  try {
+    keys = settings.brokerKeyEnc ? JSON.parse(readKey(settings.brokerKeyEnc)) : null;
+  } catch {}
+  broker = keys?.id && keys?.secret ? new AlpacaAccount({ keys, env: settings.brokerEnv, maxOrderValue: settings.maxOrderValue }) : null;
+  brokerError = null;
+}
+// Keep the broker account fresh: every 3 s while the trading screen is open, else every 30 s.
+async function brokerLoop() {
+  if (broker && active() === broker) {
+    try {
+      await broker.refresh();
+      brokerError = null;
+    } catch (e) {
+      brokerError = String(e.message || e);
+    }
+    streamSymbols();
+    pushUpdate(true);
+  }
+  setTimeout(brokerLoop, paperWatch.length ? 3000 : 30000);
+}
 
 // Account updates go out at most once a second (P&L moves with every tick), right away on a fill.
 let summaryTimer = null;
@@ -103,7 +141,7 @@ function queueTick(sym) {
   }
 }
 
-const liveSymbols = () => [...new Set([...paper.symbols(), ...alerts.symbols(), ...paperWatch])];
+const liveSymbols = () => [...new Set([...paper.symbols(), ...(broker ? broker.symbols() : []), ...alerts.symbols(), ...paperWatch])];
 function streamSymbols() {
   stream.setSymbols(liveSymbols().slice(0, 80));
 }
@@ -182,9 +220,9 @@ function applyPlanLimits() {
   const st = account.status();
   paper.orderLimit = st.paywall && st.plan !== 'pro' ? FREE_ORDER_LIMIT : null;
 }
-const paperDo = (fn) => {
+const paperDo = async (fn) => {
   applyPlanLimits();
-  fn();
+  await fn();
   streamSymbols();
   const out = snapshot();
   send('paper:update', out);
@@ -327,22 +365,79 @@ function start(launcher) {
       mergePolled(await quotes([sym]).catch(() => ({})));
       paper.tick(lastQuotes);
     }
+    const acct = active();
+    if (acct === broker) {
+      // Real money: the window must have shown the confirmation (see confirmLive in app.js).
+      if (broker.env === 'live' && o?.confirmed !== true) throw new Error('Live orders must be confirmed first');
+      const fresh = lastQuotes[sym];
+      return paperDo(() => broker.place({ ...o, refPrice: (o.side === 'buy' ? fresh?.ask : fresh?.bid) || fresh?.last }));
+    }
     return paperDo(() => paper.place(o));
   });
-  ipcMain.handle('paper:cancel', (_e, id) => paperDo(() => paper.cancel(id)));
-  ipcMain.handle('paper:modify', (_e, id, changes) => paperDo(() => paper.modify(Number(id), changes || {})));
-  ipcMain.handle('paper:close', (_e, sym) => paperDo(() => paper.close(sym)));
+  // Order ids are numbers in the simulator and strings at the broker.
+  const oid = (id) => (active() === paper ? Number(id) : String(id));
+  ipcMain.handle('paper:cancel', (_e, id) => paperDo(() => active().cancel(oid(id))));
+  ipcMain.handle('paper:modify', (_e, id, changes) => paperDo(() => active().modify(oid(id), changes || {})));
+  ipcMain.handle('paper:close', (_e, sym) => paperDo(() => active().close(String(sym))));
   ipcMain.handle('paper:bracket', (_e, sym, b) => paperDo(() => paper.modifyBracket(sym, b)));
-  ipcMain.handle('paper:protect', (_e, sym, b) => paperDo(() => paper.protect(String(sym), b || {})));
-  ipcMain.handle('paper:breakeven', (_e, sym) => paperDo(() => paper.breakeven(String(sym))));
-  ipcMain.handle('paper:trail', (_e, sym, amount) => paperDo(() => paper.trail(String(sym), Number(amount))));
-  ipcMain.handle('paper:reverse', (_e, sym) => paperDo(() => paper.reverse(String(sym))));
-  ipcMain.handle('paper:closeAll', () => paperDo(() => paper.closeAll()));
-  ipcMain.handle('paper:cancelAll', () => paperDo(() => paper.cancelAll()));
+  ipcMain.handle('paper:protect', (_e, sym, b) => paperDo(() => active().protect(String(sym), b || {})));
+  ipcMain.handle('paper:breakeven', (_e, sym) => paperDo(() => active().breakeven(String(sym))));
+  ipcMain.handle('paper:trail', (_e, sym, amount) => paperDo(() => active().trail(String(sym), Number(amount))));
+  ipcMain.handle('paper:reverse', (_e, sym, confirmed) => {
+    if (active() === broker && broker.env === 'live' && confirmed !== true) throw new Error('Live orders must be confirmed first');
+    return paperDo(() => active().reverse(String(sym)));
+  });
+  ipcMain.handle('paper:closeAll', () => paperDo(() => active().closeAll()));
+  ipcMain.handle('paper:cancelAll', () => paperDo(() => active().cancelAll()));
+  // ---- broker connection (Alpaca) ----
+  ipcMain.handle('broker:setKeys', async (_e, { id, secret, env } = {}) => {
+    id = String(id || '').trim();
+    secret = String(secret || '').trim();
+    if (!id || !secret) throw new Error('Enter both the API key ID and the secret key');
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this computer, so the keys were not saved');
+    const env2 = env === 'live' ? 'live' : 'paper';
+    const info = await new AlpacaAccount({ keys: { id, secret }, env: env2 }).test(); // only save keys that work
+    settings.brokerKeyEnc = safeStorage.encryptString(JSON.stringify({ id, secret })).toString('base64');
+    settings.brokerEnv = env2;
+    fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
+    buildBroker();
+    return { ...info, settings: publicSettings() };
+  });
+  ipcMain.handle('broker:test', () => {
+    if (!broker) throw new Error('No broker connected yet');
+    return broker.test();
+  });
+  ipcMain.handle('broker:remove', () => {
+    settings.brokerKeyEnc = '';
+    settings.tradeAccount = 'sim';
+    fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
+    buildBroker();
+    return paperDo(() => {});
+  });
+  ipcMain.handle('broker:select', async (_e, which) => {
+    if (which === 'broker') {
+      if (!broker) throw new Error('Connect a broker first (Settings → Broker)');
+      if (!brokerAllowed()) throw new Error('Trading with a real broker is a Pro feature');
+      await broker.refresh();
+    }
+    settings.tradeAccount = which === 'broker' ? 'broker' : 'sim';
+    fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
+    return paperDo(() => {});
+  });
+  ipcMain.handle('broker:setLimit', (_e, value) => {
+    const v = Math.max(0, Math.round(Number(value) || 0));
+    settings.maxOrderValue = v;
+    if (broker) broker.maxOrderValue = v;
+    fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
+    return publicSettings();
+  });
   ipcMain.handle('alerts:add', (_e, a) => paperDo(() => alerts.add({ ...a, last: lastQuotes[String(a?.symbol || '').toUpperCase()]?.last })));
   ipcMain.handle('alerts:remove', (_e, id) => paperDo(() => alerts.remove(Number(id))));
   ipcMain.handle('alerts:clearFired', () => paperDo(() => alerts.clearFired()));
-  ipcMain.handle('paper:reset', (_e, cash) => paperDo(() => paper.reset(Number(cash) || settings.accountSize || 10000)));
+  ipcMain.handle('paper:reset', (_e, cash) => {
+    if (active() !== paper) throw new Error('Reset only applies to the simulated account');
+    return paperDo(() => paper.reset(Number(cash) || settings.accountSize || 10000));
+  });
   ipcMain.handle('account:status', () => account.status());
   ipcMain.handle('account:activate', (_e, key) => account.activate(key));
   ipcMain.handle('account:refresh', () => account.refreshPlan({ force: true }));
@@ -366,6 +461,8 @@ function start(launcher) {
   setInterval(() => account.refreshPlan().then((st) => send('account:status', st)).catch(() => {}), 3600e3);
   paper = new PaperAccount(path.join(dataDir(), 'paper-account.json'), settings.accountSize || 10000);
   alerts = new Alerts(path.join(dataDir(), 'alerts.json'));
+  buildBroker();
+  brokerLoop();
   createWindow(launcher);
   schedule();
   paperLoop();
