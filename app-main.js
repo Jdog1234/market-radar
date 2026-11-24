@@ -176,7 +176,14 @@ async function paperLoop() {
   setTimeout(paperLoop, streaming ? 30000 : marketOpen() ? 3000 : 20000);
 }
 
+// Free plan (when the paywall is on): 5 working paper orders at a time.
+const FREE_ORDER_LIMIT = 5;
+function applyPlanLimits() {
+  const st = account.status();
+  paper.orderLimit = st.paywall && st.plan !== 'pro' ? FREE_ORDER_LIMIT : null;
+}
 const paperDo = (fn) => {
+  applyPlanLimits();
   fn();
   streamSymbols();
   const out = snapshot();

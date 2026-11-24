@@ -329,5 +329,20 @@ test('close all and cancel all', () => {
   assert.deepStrictEqual(Object.keys(a.s.positions), []);
 });
 
+test('free plan: at most 5 working orders, but closing is never blocked', () => {
+  const a = fresh();
+  a.orderLimit = 5;
+  a.tick({ AMD: q(100, 99.99, 100.01) });
+  a.place({ symbol: 'AMD', side: 'buy', qty: 10, stopLoss: 95, takeProfit: 110 }); // fills → 2 bracket orders
+  for (const p of [90, 91, 92]) a.place({ symbol: 'AMD', side: 'buy', qty: 1, type: 'limit', price: p });
+  assert.strictEqual(working(a).length, 5);
+  assert.throws(() => a.place({ symbol: 'AMD', side: 'buy', qty: 1, type: 'limit', price: 89 }), /free plan/);
+  a.protect('AMD', { stopLoss: 96 }); // moving an existing stop is fine
+  a.close('AMD');
+  assert.strictEqual(a.s.positions.AMD, undefined);
+  a.orderLimit = null;
+  a.place({ symbol: 'AMD', side: 'buy', qty: 1, type: 'limit', price: 80 });
+});
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(`\n${passed} passed${process.exitCode ? ', some FAILED' : ''}`);

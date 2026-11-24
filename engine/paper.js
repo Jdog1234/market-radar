@@ -41,6 +41,7 @@ class PaperAccount {
       this.s = null;
     }
     if (!this.s) this.reset(startCash);
+    this.orderLimit = null; // max working orders at once (free plan); null = unlimited
     this.last = {}; // symbol → last regular-session trade price seen
     this.q = {}; // symbol → { last, bid, ask, at, session } (latest quote)
     this.loadedAt = this.mtime();
@@ -148,7 +149,7 @@ class PaperAccount {
   }
 
   // ---- orders ----
-  place({ symbol, side, qty, type = 'market', price = null, stopLoss = null, takeProfit = null, note = '' }) {
+  place({ symbol, side, qty, type = 'market', price = null, stopLoss = null, takeProfit = null, note = '' }, { exit = false } = {}) {
     this.sync();
     symbol = String(symbol || '').toUpperCase().trim();
     qty = Math.floor(Number(qty));
@@ -168,6 +169,7 @@ class PaperAccount {
     const adds = Math.sign(cur) !== -dir ? qty : Math.max(0, qty - Math.abs(cur));
     if (adds * ref > this.buyingPower() + 1e-6) throw new Error(`Not enough buying power ($${this.buyingPower().toFixed(0)} available)`);
 
+    if (!exit) this.checkLimit(1); // closing a position is never blocked
     const o = {
       id: this.s.nextId++, symbol, side, qty, type, price: type === 'market' ? null : Number(price), status: 'working', createdAt: this.now(),
       stopLoss: stopLoss ? Number(stopLoss) : null, takeProfit: takeProfit ? Number(takeProfit) : null, note, role: 'entry',
@@ -194,7 +196,7 @@ class PaperAccount {
     const p = this.s.positions[symbol];
     if (!p) throw new Error('No open position');
     for (const o of this.s.orders) if (o.symbol === symbol && o.status === 'working' && o.role !== 'entry') Object.assign(o, { status: 'cancelled', doneAt: this.now() });
-    return this.place({ symbol, side: p.qty > 0 ? 'sell' : 'buy', qty: Math.abs(p.qty), type: 'market', note: 'Close position' });
+    return this.place({ symbol, side: p.qty > 0 ? 'sell' : 'buy', qty: Math.abs(p.qty), type: 'market', note: 'Close position' }, { exit: true });
   }
 
   // Move a position's protective orders.
@@ -241,6 +243,7 @@ class PaperAccount {
         }
       });
     }
+    this.checkLimit([['stop', stopLoss], ['target', takeProfit]].filter(([role, v]) => v != null && v !== '' && !working(role)).length);
     plan.forEach((f) => f()); // validate everything first, then change
     this.save();
     this.tick({});
@@ -273,7 +276,7 @@ class PaperAccount {
     const p = this.s.positions[symbol];
     if (!p) throw new Error('No open position');
     for (const o of this.s.orders) if (o.symbol === symbol && o.status === 'working' && o.role !== 'entry') Object.assign(o, { status: 'cancelled', doneAt: this.now() });
-    return this.place({ symbol, side: p.qty > 0 ? 'sell' : 'buy', qty: Math.abs(p.qty) * 2, type: 'market', note: 'Reverse position' });
+    return this.place({ symbol, side: p.qty > 0 ? 'sell' : 'buy', qty: Math.abs(p.qty) * 2, type: 'market', note: 'Reverse position' }, { exit: true });
   }
 
   // Close every position at market; returns the symbols that could not be closed (no price yet).
@@ -295,6 +298,14 @@ class PaperAccount {
     this.sync();
     for (const o of this.s.orders) if (o.status === 'working') Object.assign(o, { status: 'cancelled', doneAt: this.now() });
     this.save();
+  }
+
+  // Free plan: only so many working orders at once. Stop-loss / take-profit orders that a
+  // filled bracket creates are never blocked (a position must not be left unprotected).
+  checkLimit(adding) {
+    if (!this.orderLimit || adding <= 0) return;
+    const open = this.s.orders.filter((o) => o.status === 'working').length;
+    if (open + adding > this.orderLimit) throw new Error(`The free plan allows ${this.orderLimit} open orders at a time (you have ${open}). Cancel one, or upgrade to Pro for unlimited orders.`);
   }
 
   // A stop that is already through the market would fill at once: that's a market order.

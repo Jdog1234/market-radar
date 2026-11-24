@@ -279,9 +279,13 @@ $('#settingsForm').addEventListener('submit', async (e) => {
 
 // ---------- events ----------
 // Pro pages, locked for free users only when the paywall is switched on (cloud.json).
-const PRO_VIEWS = { before: 'Before the move', trades: 'Trade ideas', lookup: 'Stock lookup', paper: 'Paper trading' };
+// Paper trading is free, limited to one chart and 5 open orders (FREE_ORDER_LIMIT in app-main.js).
+const PRO_VIEWS = { before: 'Before the move', trades: 'Trade ideas', lookup: 'Stock lookup' };
 let acct = { enabled: false, paywall: false, plan: 'free' };
-const locked = (name) => acct.paywall && acct.plan !== 'pro' && PRO_VIEWS[name];
+const isPro = () => !acct.paywall || acct.plan === 'pro';
+const locked = (name) => !isPro() && PRO_VIEWS[name];
+const FREE_ORDERS = 5;
+const PRO_PITCH = 'Pro unlocks Before the move, Trade ideas, Stock lookup, up to 4 charts at once and unlimited paper orders.';
 
 function showView(name) {
   if (locked(name)) {
@@ -298,7 +302,7 @@ function showView(name) {
     }
     lockView.classList.remove('hidden');
     lockView.innerHTML = `<div class="lock card"><h2>${esc(PRO_VIEWS[name])} is a Pro feature</h2>
-      <p>Pro unlocks Before the move, Trade ideas, Stock lookup and Paper trading.</p>
+      <p>${PRO_PITCH}</p>
       <div class="btns">${acct.signedIn
         ? '<button class="btn" data-upgrade="month">Upgrade monthly</button><button class="btn ghost" data-upgrade="year">Upgrade yearly</button>'
         : '<button class="btn" data-goto="settings">Sign in or create an account</button>'}</div></div>`;
@@ -1726,6 +1730,10 @@ function syncTicket() {
     if (sl && tp) est += `<br>Reward : risk = <b>${(Math.abs(tp - px) / Math.abs(px - sl)).toFixed(1)} : 1</b>`;
     if (pt.acct) est += `<br>Buying power: $${pt.acct.buyingPower.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   }
+  if (!isPro() && pt.acct) {
+    const open = pt.acct.orders.length;
+    est += `${est ? '<br>' : ''}<span class="${open >= FREE_ORDERS ? 'down' : 'muted'}">Free plan: ${open} of ${FREE_ORDERS} open orders</span> · <a data-goto="settings" style="cursor:pointer">Go Pro for unlimited</a>`;
+  }
   $('#ptEst').innerHTML = est || 'Enter shares to see the order value and risk.';
   buildOrderLines();
 }
@@ -1965,7 +1973,19 @@ function miniLines(m, clear = false) {
 }
 
 // Lay out the grid: the full chart sits in the selected slot, mini charts in the rest.
+// Menu items offering Pro (or sign-in first).
+function proOffer(title) {
+  return [
+    { label: `<b>${esc(title)}</b>`, run: () => {} },
+    ...(acct.signedIn
+      ? [{ label: 'Upgrade to Pro (monthly)', run: () => radar.account.upgrade('month') }, { label: 'Upgrade to Pro (yearly)', run: () => radar.account.upgrade('year') }]
+      : [{ label: 'Sign in or create an account', run: () => showView('settings') }]),
+  ];
+}
+
 function buildGrid() {
+  if (!isPro()) pt.layout = '1'; // free plan: one chart
+  $('#ptLayout').classList.toggle('free', !isPro());
   const n = LAYOUT_N[pt.layout];
   if (pt.active >= n) {
     // The selected chart moves into the first slot when the layout shrinks.
@@ -2008,6 +2028,10 @@ function selectSlot(i) {
 $('#ptLayout').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b || b.dataset.l === pt.layout) return;
+  if (!isPro() && b.dataset.l !== '1') {
+    const r = b.getBoundingClientRect();
+    return popMenu(r.left, r.bottom + 4, proOffer('Multiple charts are a Pro feature'));
+  }
   pt.layout = b.dataset.l;
   store.set('pt.layout', pt.layout);
   buildGrid();
@@ -2459,7 +2483,13 @@ $('#licensedOnly').addEventListener('change', async (e) => {
 
 // ---------- account ----------
 function renderAccount(st) {
+  const was = isPro();
   acct = st;
+  // Plan changed (signed in, upgraded, lapsed): re-apply the chart and order limits.
+  if (was !== isPro() && paperVisible()) {
+    buildGrid();
+    syncTicket();
+  }
   const card = $('#acctCard');
   $('#planBadge').innerHTML = st.enabled && st.signedIn ? `<span class="plan ${st.plan === 'pro' ? 'pro' : ''}">${st.plan === 'pro' ? 'PRO' : 'FREE'}</span>` : '';
   if (!st.enabled) {
