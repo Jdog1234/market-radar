@@ -303,7 +303,7 @@ function showView(name) {
     lockView.classList.remove('hidden');
     lockView.innerHTML = `<div class="lock card"><h2>${esc(PRO_VIEWS[name])} is a Pro feature</h2>
       <p>${PRO_PITCH}</p>
-      <div class="btns"><button class="btn" data-upgrade="month">Get Pro ($19/month)</button><button class="btn ghost" data-upgrade="year">Yearly ($190)</button><button class="btn ghost" data-goto="settings">I have a license key</button></div></div>`;
+      <div class="btns"><button class="btn" data-upgrade="month">Get Pro ($19/month)</button><button class="btn ghost" data-upgrade="year">Yearly ($149, save 35%)</button><button class="btn ghost" data-goto="settings">I have a license key</button></div></div>`;
     return;
   }
   $('#view-locked')?.classList.add('hidden');
@@ -1976,7 +1976,7 @@ function proOffer(title) {
   return [
     { label: `<b>${esc(title)}</b>`, run: () => {} },
     { label: 'Get Pro ($19/month)', run: () => radar.account.upgrade('month') },
-    { label: 'Get Pro yearly ($190)', run: () => radar.account.upgrade('year') },
+    { label: 'Get Pro yearly ($149, save 35%)', run: () => radar.account.upgrade('year') },
     { label: 'I have a license key', run: () => showView('settings') },
   ];
 }
@@ -2499,8 +2499,8 @@ function renderAccount(st) {
       <button class="btn" type="submit">Activate</button></form>`;
   if (!pro) {
     card.innerHTML = `<h3>Market Radar Pro</h3>
-      <p class="small muted">${esc(PRO_PITCH)} $19/month or $190/year, cancel anytime. Pay by card or PayPal through Gumroad.</p>
-      <div class="acct-form"><button class="btn" data-upgrade="month">Get Pro (monthly)</button><button class="btn ghost" data-upgrade="year">Get Pro (yearly)</button></div>
+      <p class="small muted">${esc(PRO_PITCH)} $19/month, or $149/year (save $79, 35%). Cancel anytime. Checkout is through Gumroad.</p>
+      <div class="acct-form"><button class="btn" data-upgrade="month">Get Pro (monthly)</button><button class="btn ghost" data-upgrade="year">Get Pro yearly ($149, save 35%)</button></div>
       <p class="small muted" style="margin-top:14px">${st.signedIn ? `Your saved key ${esc(st.keyHint || '')} isn't active (the subscription ended or the payment failed). Renew on Gumroad, then click Check again, or paste a new key.` : 'Already subscribed? Paste the license key from your Gumroad receipt:'}</p>
       ${keyForm}
       ${st.signedIn ? '<div class="acct-form"><button class="btn ghost" id="acctRefresh">Check again</button><button class="btn ghost" id="acctBilling">Manage subscription</button><button class="btn ghost" id="acctOut">Remove key</button></div>' : ''}
