@@ -453,7 +453,7 @@ function renderLookup(r) {
     <div class="lk-head">
       <h1>${esc(r.symbol)}</h1>
       <div><div>${esc(r.name)}</div><div class="muted small">${esc(r.sector)}${r.industry ? ' · ' + esc(r.industry) : ''} · ${cap(r.marketCap)}</div></div>
-      <button class="btn ghost" data-ptsym-open="${esc(r.symbol)}">Paper trade ${esc(r.symbol)}</button>
+      <button class="btn ghost" data-ptsym-open="${esc(r.symbol)}">Trade ${esc(r.symbol)}</button>
       <div style="margin-left:auto;text-align:right">${t.last ? `<div style="font-size:22px;font-weight:700">${money(t.last)}</div><div class="${cls(t.ret1)}">${pct(t.ret1)} today</div>` : ''}</div>
     </div>
 
@@ -643,7 +643,7 @@ function renderTrades() {
       ${shares ? `<div class="note">Size: <b>${shares} shares</b> (~$${cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}${cost > s.accountSize ? ', more than your account, so reduce it' : ''})</div>` : ''}
       ${flags ? `<div class="flags">${flags}</div>` : ''}
       <div class="chance">${chance}</div>
-      <button class="btn" style="margin-top:10px" data-papertrade="${esc(t.symbol)}">Paper trade this →</button>
+      <button class="btn" style="margin-top:10px" data-papertrade="${esc(t.symbol)}">Trade this →</button>
     </div>`;
   }).join('') || '<div class="empty">No trade ideas pass the filters right now. That is normal on quiet news days.</div>';
 }
@@ -1551,7 +1551,7 @@ function renderTabs() {
         <td>${bracketOf(p.symbol, 'stop') || '—'}</td><td>${bracketOf(p.symbol, 'target') || '—'}</td>
         <td><div class="pt-acts"><button class="x" data-pact="be:${esc(p.symbol)}" title="Move the stop-loss to your average price">Breakeven</button><button class="x" data-pact="trail:${esc(p.symbol)}" title="A stop-loss that follows the price">Trail</button><button class="x" data-pact="rev:${esc(p.symbol)}" title="Close and open the opposite position at market">Reverse</button><button class="x" data-ptclose="${esc(p.symbol)}">Close</button></div></td></tr>`;
       }).join('')}</table>${bulk}`
-      : '<div class="empty">No open positions. Use BUY / SELL on the chart, the order panel, or "Paper trade this" on a Trade idea.</div>';
+      : '<div class="empty">No open positions. Use BUY / SELL on the chart, the order panel, or "Trade this" on a Trade idea.</div>';
   } else if (pt.tab === 'ord') {
     html = a.orders.length ? `<table class="mini"><tr><th>#</th><th>Symbol</th><th>Side</th><th>Type</th><th>Qty</th><th>Price</th><th>Role</th><th>Bracket</th><th>Placed</th><th></th></tr>
       ${a.orders.map((o) => `<tr class="clk" data-ptsym="${esc(o.symbol)}"><td>${o.id}</td><td><b>${esc(o.symbol)}</b></td><td class="${o.side === 'buy' ? 'up' : 'down'}">${o.side === 'buy' ? 'Buy' : 'Sell'}</td><td>${o.type}</td><td>${o.qty}</td>
@@ -1832,16 +1832,16 @@ function renderAcctSel() {
   $('#ptAcctSel').innerHTML = `<button data-acct="sim" class="${m.kind === 'sim' ? 'on' : ''}" title="Built-in simulator with fake money">Simulated</button>` +
     (m.configured
       ? `<button data-acct="broker" class="brk ${m.env === 'live' ? 'live' : ''} ${m.kind === 'broker' ? 'on' : ''}" title="Your Alpaca ${env === 'LIVE' ? 'real-money' : 'practice'} account">Alpaca ${env}${m.allowed ? '' : ' 🔒'}</button>`
-      : '<button data-acct="connect" title="Connect a broker in Settings">+ Broker</button>');
+      : '') + `<button data-acct="connect" title="${m.configured ? 'Broker connection' : 'Connect a real brokerage account'}">${m.configured ? '⚙' : '+ Connect broker'}</button>`;
   document.body.classList.toggle('live-trading', liveMode());
-  $('#ptTitle').textContent = m.kind === 'broker' ? `Alpaca ${m.env === 'live' ? 'LIVE' : 'Paper'}` : 'Paper Trading';
+  $('#ptTitle').textContent = m.kind === 'broker' ? `Alpaca ${m.env === 'live' ? 'LIVE' : 'paper'} account` : 'Simulated account';
   if (m.error && m.error !== renderAcctSel.lastErr) toast(m.error, true);
   renderAcctSel.lastErr = m.error;
 }
 $('#ptAcctSel').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-acct]');
   if (!b || b.classList.contains('on')) return;
-  if (b.dataset.acct === 'connect') return showView('settings');
+  if (b.dataset.acct === 'connect') return openBroker();
   if (b.dataset.acct === 'broker' && !pt.mode.allowed) {
     const r = b.getBoundingClientRect();
     return popMenu(r.left, r.bottom + 4, proOffer('Trading with a real broker is a Pro feature'));
@@ -2498,30 +2498,55 @@ $('#appearance').addEventListener('click', (e) => {
 $('#appearance').addEventListener('change', (e) => e.target.id === 'themeCustom' && setTheme({ accent: e.target.value }));
 renderAppearance();
 
-// ---------- broker connection (Alpaca) ----------
+// ---------- broker connection (Alpaca): setup guide on the Trading screen ----------
+function openBroker() {
+  $('#brokerModal').classList.remove('hidden');
+  renderBroker();
+}
+$('#brokerClose').addEventListener('click', () => $('#brokerModal').classList.add('hidden'));
+$('#brokerModal').addEventListener('mousedown', (e) => e.target.id === 'brokerModal' && $('#brokerModal').classList.add('hidden'));
+document.addEventListener('keydown', (e) => e.key === 'Escape' && $('#brokerModal').classList.add('hidden'));
+
 async function renderBroker(note = '') {
   const st = await radar.getSettings();
   const pro = isPro();
   const body = $('#brokerBody');
+  const proNote = pro ? '' : '<div class="bk-note"><b>Trading with a real broker is a Pro feature.</b> You can connect now; switching to it needs Pro. <a data-goto="settings" style="cursor:pointer">Get Pro</a></div>';
   if (st.brokerConfigured) {
-    body.innerHTML = `<p class="small">Connected: <b>Alpaca ${st.brokerEnv === 'live' ? '<span class="broker-live">LIVE (real money)</span>' : 'paper (practice)'}</b>.
-      ${pro ? 'Pick it with the account switch at the top of the Paper trading screen.' : '<b>Trading with a broker is a Pro feature.</b>'}</p>
-      <div class="broker-form"><label class="small">Largest order allowed ($, 0 = no limit)<input type="number" id="brokerLimit" min="0" step="100" value="${st.maxOrderValue ?? 5000}" /></label></div>
+    body.innerHTML = `<p>Connected: <b>Alpaca ${st.brokerEnv === 'live' ? '<span class="broker-live">LIVE (real money)</span>' : 'paper (practice money)'}</b>. Switch to it with the <b>Alpaca</b> button at the top of this screen; <b>Simulated</b> takes you back to the built-in practice account.</p>
+      ${proNote}
+      <div class="broker-form"><label class="small">Largest order allowed, in dollars (0 = no limit)<input type="number" id="brokerLimit" min="0" step="100" value="${st.maxOrderValue ?? 5000}" /></label></div>
       <div class="acct-form"><button class="btn ghost" id="brokerSaveLimit">Save limit</button><button class="btn ghost" id="brokerTest">Test connection</button><button class="btn ghost" id="brokerRemove">Disconnect</button></div>
+      <p class="small muted" style="margin-top:10px">To move from paper to live (or back), click Disconnect and connect again with the other account's keys. Deposits, withdrawals and statements are on <a data-url="https://app.alpaca.markets">app.alpaca.markets</a>.</p>
       <div id="brokerMsg" class="small" style="margin-top:8px">${note}</div>`;
     return;
   }
-  body.innerHTML = `<ol class="small muted" style="margin:8px 0 0 18px;padding:0">
-      <li>Open a free account at <a data-url="https://app.alpaca.markets/signup">alpaca.markets</a> (the paper account works right away; live trading needs Alpaca to approve you).</li>
-      <li>In Alpaca, pick <b>Paper</b> or <b>Live</b> at the top left, then <b>Home → API Keys → Generate</b>.</li>
-      <li>Paste both keys here. They're encrypted with your computer's keychain and only ever sent to Alpaca.</li></ol>
-    <form class="broker-form" id="brokerForm">
-      <div class="broker-env"><label><input type="radio" name="env" value="paper" checked /> Paper (practice, fake money)</label><label><input type="radio" name="env" value="live" /> <span class="broker-live">Live (real money)</span></label></div>
-      <input type="text" name="keyId" placeholder="API key ID" autocomplete="off" spellcheck="false" required />
-      <input type="password" name="secret" placeholder="Secret key" autocomplete="off" required />
-      <div><button class="btn" type="submit">Connect</button></div>
-    </form>
-    <div id="brokerMsg" class="small" style="margin-top:8px">${note}</div>`;
+  body.innerHTML = `${proNote}
+    <ol class="bk-steps">
+      <li><b class="t">Create a free Alpaca account</b>
+        Go to <a data-url="https://app.alpaca.markets/signup">app.alpaca.markets/signup</a> and enter your name, your <b>country of tax residence</b>, email and a password, then confirm your email.
+        <ul><li>A <b>paper (practice) account</b> is ready straight away, with $100,000 of practice money. It's free, and open to people in most countries.</li>
+        <li>Not every country is on Alpaca's list (Canada isn't, for example). If yours isn't, you can keep using the Simulated account here.</li></ul></li>
+      <li><b class="t">Start with Paper, go Live later</b>
+        In Alpaca's dashboard, the account name at the <b>top left</b> switches between your Paper account and your Live account.
+        <ul><li><b>Live</b> means real money: Alpaca asks for ID and personal details, reviews the application, and you add money before you can trade. Approval can take a few business days.</li>
+        <li>Practise on Paper first. Paper and Live use <b>different keys</b>.</li></ul></li>
+      <li><b class="t">Make your API keys</b>
+        With the account you want selected (Paper or Live), open the dashboard <b>Home</b> page, find <b>API Keys</b> and click <b>Generate New Keys</b>.
+        <ul><li>Copy both the <b>Key ID</b> and the <b>Secret Key</b>. Alpaca shows the secret <b>only once</b>; if you lose it, generate new keys.</li>
+        <li>Treat them like a password: anyone with them can trade your account. Never share them.</li></ul></li>
+      <li><b class="t">Paste them here and connect</b>
+        <form class="broker-form" id="brokerForm">
+          <div class="broker-env"><label><input type="radio" name="env" value="paper" checked /> Paper (practice money)</label><label><input type="radio" name="env" value="live" /> <span class="broker-live">Live (real money)</span></label></div>
+          <input type="text" name="keyId" placeholder="Key ID (starts with PK… for paper, AK… for live)" autocomplete="off" spellcheck="false" required />
+          <input type="password" name="secret" placeholder="Secret Key" autocomplete="off" required />
+          <div><button class="btn" type="submit">Connect</button></div>
+        </form>
+        <div class="muted small">The keys are checked with Alpaca, encrypted with your computer's keychain, and only ever sent to Alpaca.</div>
+        <div id="brokerMsg" class="small" style="margin-top:6px">${note}</div></li>
+      <li><b class="t">Trade</b>
+        Click <b>Alpaca</b> at the top of this screen. Live orders always ask you to confirm first, and orders above your size limit ($5,000 to start) are blocked.</li>
+    </ol>`;
 }
 const brokerMsg = (html) => $('#brokerMsg') && ($('#brokerMsg').innerHTML = html);
 document.addEventListener('submit', async (e) => {
@@ -2533,7 +2558,8 @@ document.addEventListener('submit', async (e) => {
   f.querySelector('button').disabled = true;
   try {
     const r = await radar.broker.setKeys({ id: f.elements.namedItem('keyId').value, secret: f.elements.namedItem('secret').value, env });
-    renderBroker(`<span class="msg-ok">Connected to Alpaca ${r.env === 'live' ? 'LIVE' : 'paper'} account ${esc(r.accountNumber || '')} (equity ${usd(r.equity || 0)}).</span>`);
+    await renderBroker(`<span class="msg-ok">Connected to Alpaca ${r.env === 'live' ? 'LIVE' : 'paper'} account ${esc(r.accountNumber || '')} (equity ${usd(r.equity || 0)}). Now click <b>Alpaca</b> at the top to trade it.</span>`);
+    applyPaper(await radar.paper.get());
   } catch (err) {
     brokerMsg(`<span class="msg-err">${esc(errText(err))}</span>`);
     f.querySelector('button').disabled = false;
@@ -2559,8 +2585,6 @@ document.addEventListener('click', async (e) => {
     brokerMsg(`<span class="msg-err">${esc(errText(err))}</span>`);
   }
 });
-renderBroker();
-
 // ---------- licensed data (Polygon) ----------
 function polyStatus(s) {
   $('#polyStatus').innerHTML = s.polygonConfigured
@@ -2601,7 +2625,7 @@ $('#licensedOnly').addEventListener('change', async (e) => {
 function renderAccount(st) {
   const was = isPro();
   acct = st;
-  if (was !== isPro()) renderBroker();
+  if (was !== isPro() && !$('#brokerModal').classList.contains('hidden')) renderBroker();
   // Plan changed (signed in, upgraded, lapsed): re-apply the chart and order limits.
   if (was !== isPro() && paperVisible()) {
     buildGrid();

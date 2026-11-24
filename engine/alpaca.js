@@ -35,7 +35,7 @@ class AlpacaAccount {
     try {
       d = text ? JSON.parse(text) : null;
     } catch {}
-    if (res.status === 401 || res.status === 403) throw new Error(d?.message ? `Alpaca: ${d.message}` : 'Alpaca rejected the API keys. Check them in Settings → Broker.');
+    if (res.status === 401 || res.status === 403) throw new Error(d?.message ? `Alpaca: ${d.message}` : 'Alpaca rejected the API keys. Check them under ⚙ at the top of the Trading screen.');
     if (!res.ok) throw new Error(`Alpaca: ${d?.message || `request failed (${res.status})`}`);
     return d;
   }
@@ -144,7 +144,7 @@ class AlpacaAccount {
   checkSize(qty, price) {
     if (!(price > 0) || !this.maxOrderValue) return;
     const value = qty * price;
-    if (value > this.maxOrderValue) throw new Error(`This order is worth about $${Math.round(value).toLocaleString()}, above your $${this.maxOrderValue.toLocaleString()} limit per order (Settings → Broker).`);
+    if (value > this.maxOrderValue) throw new Error(`This order is worth about $${Math.round(value).toLocaleString()}, above your $${this.maxOrderValue.toLocaleString()} limit per order (change it under ⚙ at the top of the Trading screen).`);
   }
 
   // ---- orders ----

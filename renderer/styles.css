@@ -464,3 +464,16 @@ body.live-trading .pt-submit::after { content: ' · LIVE'; font-weight: 800; }
 .broker-env { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; }
 .broker-live { color: var(--down); font-weight: 700; }
 .tv-acctsel { flex-shrink: 0; }
+
+/* broker setup guide (Trading screen) */
+.tv-modal { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.55); display: flex; align-items: flex-start; justify-content: center; padding: 28px 16px; overflow: auto; }
+.tv-modal-card { position: relative; width: min(680px, 100%); background: var(--tv-panel); border: 1px solid var(--tv-line); border-radius: 10px; padding: 20px 22px; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45); font-size: 13px; line-height: 1.5; }
+.tv-modal-card h3 { margin: 0 0 8px; font-size: 17px; }
+.tv-modal-x { all: unset; cursor: pointer; position: absolute; top: 10px; right: 14px; font-size: 22px; color: var(--tv-muted); }
+.tv-modal-x:hover { color: var(--tv-text); }
+.bk-steps { counter-reset: bk; list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 12px; }
+.bk-steps > li { counter-increment: bk; position: relative; padding-left: 36px; }
+.bk-steps > li::before { content: counter(bk); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--tv-blue); color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 12px; }
+.bk-steps b.t { display: block; margin-bottom: 2px; font-size: 13.5px; }
+.bk-steps ul { margin: 4px 0 0 16px; padding: 0; color: var(--tv-muted); }
+.bk-note { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--tv-bg); border: 1px solid var(--tv-line); color: var(--tv-muted); }

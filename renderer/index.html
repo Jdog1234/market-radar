@@ -13,7 +13,7 @@
       <button data-view="signals" class="active">Signals</button>
       <button data-view="before">Before the move</button>
       <button data-view="trades">Trade ideas</button>
-      <button data-view="paper">Paper trading</button>
+      <button data-view="paper">Trading</button>
       <button data-view="lookup">Stock lookup</button>
       <button data-view="watchlist">Watchlist</button>
       <button data-view="news">News feed</button>
@@ -171,12 +171,20 @@
             <div id="ptCtx" class="tv-menu tv-ctx hidden"></div>
             <div id="ptToast" class="tv-toast hidden"></div>
             <div id="ptKeys" class="tv-keys hidden"></div>
+            <div id="brokerModal" class="tv-modal hidden" role="dialog" aria-label="Connect a broker">
+              <div class="tv-modal-card">
+                <button class="tv-modal-x" id="brokerClose" title="Close">×</button>
+                <h3>Trade for real with Alpaca</h3>
+                <p class="small muted">Connect your own <a data-url="https://alpaca.markets">Alpaca</a> brokerage account and your orders from this screen go to Alpaca: the order panel, BUY/SELL buttons, right-click orders and dragging stop-loss and take-profit lines all work the same. <b>Live trading uses real money and you can lose it.</b> Market Radar's signals are research, not financial advice, and the app never trades on its own.</p>
+                <div id="brokerBody"></div>
+              </div>
+            </div>
           </div>
           </div>
           <div class="tv-bottom" id="ptBottom">
             <div class="tv-resize" id="ptResize"></div>
             <div class="tv-bhead">
-              <b class="tv-btitle" id="ptTitle">Paper Trading</b>
+              <b class="tv-btitle" id="ptTitle">Simulated account</b>
               <div class="tv-tabs" id="ptTabs">
                 <button data-t="pos" class="on">Positions</button><button data-t="ord">Orders</button>
                 <button data-t="hist">History</button><button data-t="alerts">Alerts</button><button data-t="acct">Account</button>
@@ -270,11 +278,6 @@
         <div class="theme-label">Candle colors</div>
         <div id="themeCandles" class="theme-row"></div>
         <button type="button" class="btn ghost" id="themeReset" style="margin-top:12px">Reset to default</button>
-      </div>
-      <div class="card about" id="brokerCard" style="margin-bottom:16px">
-        <h3>Broker: trade for real</h3>
-        <p class="small muted">Connect your own <a data-url="https://alpaca.markets">Alpaca</a> brokerage account to send real orders from the trading screen (charts, order panel, drag-to-move stop-loss and take-profit all work the same). Start with Alpaca's free <b>paper</b> (practice) account. <b>Live trading uses real money and you can lose it.</b> Market Radar's signals are research, not financial advice, and the app never trades on its own.</p>
-        <div id="brokerBody"></div>
       </div>
       <div class="card about" style="margin-bottom:16px">
         <h3>Licensed market data</h3>

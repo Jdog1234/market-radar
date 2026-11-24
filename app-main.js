@@ -416,7 +416,7 @@ function start(launcher) {
   });
   ipcMain.handle('broker:select', async (_e, which) => {
     if (which === 'broker') {
-      if (!broker) throw new Error('Connect a broker first (Settings → Broker)');
+      if (!broker) throw new Error('Connect a broker first: click + Connect broker at the top of the Trading screen');
       if (!brokerAllowed()) throw new Error('Trading with a real broker is a Pro feature');
       await broker.refresh();
     }

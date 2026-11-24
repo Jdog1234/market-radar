@@ -1,7 +1,7 @@
 {
   "name": "market-radar",
   "productName": "Market Radar",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Reads market, earnings, analyst and macro/forex news and ranks stocks with bullish and bearish catalysts.",
   "main": "main.js",
   "author": "Jake",
