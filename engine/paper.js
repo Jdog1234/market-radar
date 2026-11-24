@@ -158,6 +158,28 @@ class PaperAccount {
     return this.place({ symbol, side: p.qty > 0 ? 'sell' : 'buy', qty: Math.abs(p.qty), type: 'market', note: 'Close position' });
   }
 
+  // Move a working order's price (e.g. dragging a stop-loss or take-profit line).
+  // Rejects prices that would fill instantly on the wrong side of the market.
+  modify(id, price) {
+    this.sync();
+    const o = this.s.orders.find((x) => x.id === id && x.status === 'working');
+    if (!o) throw new Error('Order not found or already done');
+    price = +Number(price).toFixed(2);
+    if (!(price > 0)) throw new Error('Price must be above zero');
+    if (o.type === 'market') throw new Error('Market orders have no price to move');
+    const last = this.last[o.symbol];
+    if (last) {
+      const buy = o.side === 'buy';
+      const name = o.role === 'stop' ? 'Stop-loss' : o.role === 'target' ? 'Take-profit' : `${buy ? 'Buy' : 'Sell'} ${o.type}`;
+      // Stops sit beyond the market in the direction that triggers them; limits on the other side.
+      if (o.type === 'stop' && (buy ? price <= last : price >= last)) throw new Error(`${name} must stay ${buy ? 'above' : 'below'} the current price ($${last.toFixed(2)})`);
+      if (o.type === 'limit' && o.role === 'target' && (buy ? price >= last : price <= last)) throw new Error(`${name} must stay ${buy ? 'below' : 'above'} the current price ($${last.toFixed(2)})`);
+    }
+    o.price = price;
+    this.save();
+    return o;
+  }
+
   // Move a position's protective orders.
   modifyBracket(symbol, { stopLoss, takeProfit }) {
     this.sync();

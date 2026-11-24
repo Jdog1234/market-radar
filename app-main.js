@@ -186,6 +186,7 @@ function start(launcher) {
   });
   ipcMain.handle('paper:cancel', (_e, id) => paperDo(() => paper.cancel(id)));
   ipcMain.handle('paper:close', (_e, sym) => paperDo(() => paper.close(sym)));
+  ipcMain.handle('paper:modify', (_e, id, price) => paperDo(() => paper.modify(id, price)));
   ipcMain.handle('paper:bracket', (_e, sym, b) => paperDo(() => paper.modifyBracket(sym, b)));
   ipcMain.handle('paper:reset', (_e, cash) => paperDo(() => paper.reset(Number(cash) || settings.accountSize || 10000)));
   ipcMain.handle('guide:get', () => fs.readFileSync(path.join(__dirname, 'RESEARCH.md'), 'utf8'));

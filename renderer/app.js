@@ -666,6 +666,7 @@ function makePane(i, sym, tf) {
   el.addEventListener('mousedown', () => {
     if (pt.active !== p.i) setActive(p.i);
   }, true);
+  enableLineDrag(p);
   p.chart.subscribeClick((param) => {
     if (pt.active !== p.i || !param.point || p.justActivated) return;
     const price = p.candle.coordinateToPrice(param.point.y);
@@ -822,24 +823,92 @@ function liveCandle(p) {
 
 // Price lines for one pane: only that pane's own symbol, never another stock's.
 function drawLines(p) {
-  for (const l of p.lines) p.candle.removePriceLine(l);
+  if (p.drag) return; // don't redraw underneath a line being dragged
+  for (const l of p.lines) p.candle.removePriceLine(l.line);
   p.lines = [];
   const a = pt.acct;
   if (!a || !p.bars.length) return;
-  const add = (price, color, title, style = 2) => price && p.lines.push(p.candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
+  // meta: what dragging this line changes ({ order: id } or { field: ticket input id }).
+  const add = (price, color, title, style = 2, meta = null) => {
+    if (!price) return;
+    p.lines.push({ line: p.candle.createPriceLine({ price, color, lineWidth: meta ? 2 : 1, lineStyle: style, axisLabelVisible: true, title }), price, title, meta });
+  };
   const pos = a.positions.find((x) => x.symbol === p.sym);
   if (pos) add(pos.avg, cssVar('--accent'), `${pos.qty > 0 ? 'Long' : 'Short'} ${Math.abs(pos.qty)} @ avg`, 0);
   for (const o of a.orders.filter((o) => o.symbol === p.sym)) {
     const color = o.role === 'stop' ? cssVar('--down') : o.role === 'target' ? cssVar('--up') : cssVar('--warn');
-    const title = o.role === 'stop' ? 'Stop-loss' : o.role === 'target' ? 'Take-profit' : `${o.side === 'buy' ? 'Buy' : 'Sell'} ${o.type} ${o.qty}`;
-    if (o.price) add(o.price, color, title);
+    const title = o.role === 'stop' ? 'Stop-loss ↕' : o.role === 'target' ? 'Take-profit ↕' : `${o.side === 'buy' ? 'Buy' : 'Sell'} ${o.type} ${o.qty} ↕`;
+    if (o.price) add(o.price, color, title, 2, { order: o.id });
   }
   // The ticket's preview lines go on the active pane only.
   if (p.i === pt.active) {
-    if ($('#ptUseSL').checked && +$('#ptSL').value) add(+$('#ptSL').value, 'rgba(240,82,82,0.5)', 'SL (preview)', 3);
-    if ($('#ptUseTP').checked && +$('#ptTP').value) add(+$('#ptTP').value, 'rgba(34,197,94,0.5)', 'TP (preview)', 3);
-    if ($('#ptType').value !== 'market' && +$('#ptPrice').value) add(+$('#ptPrice').value, 'rgba(245,165,36,0.6)', `${$('#ptType').value} (preview)`, 3);
+    if ($('#ptUseSL').checked && +$('#ptSL').value) add(+$('#ptSL').value, 'rgba(240,82,82,0.6)', 'SL (preview) ↕', 3, { field: '#ptSL' });
+    if ($('#ptUseTP').checked && +$('#ptTP').value) add(+$('#ptTP').value, 'rgba(34,197,94,0.6)', 'TP (preview) ↕', 3, { field: '#ptTP' });
+    if ($('#ptType').value !== 'market' && +$('#ptPrice').value) add(+$('#ptPrice').value, 'rgba(245,165,36,0.7)', `${$('#ptType').value} (preview) ↕`, 3, { field: '#ptPrice' });
   }
+}
+
+// ---- dragging order lines (TradingView-style) ----
+const GRAB_PX = 6;
+function lineAt(p, y) {
+  let best = null;
+  for (const l of p.lines) {
+    if (!l.meta) continue;
+    const ly = p.candle.priceToCoordinate(l.price);
+    if (ly == null) continue;
+    const d = Math.abs(ly - y);
+    if (d <= GRAB_PX && (!best || d < best.d)) best = { l, d };
+  }
+  return best?.l || null;
+}
+
+function enableLineDrag(p) {
+  const host = $('.pane-chart', p.el);
+  const yOf = (e) => e.clientY - host.getBoundingClientRect().top;
+  // Capture phase: grab the line before the chart starts panning.
+  host.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || pt.active !== p.i) return;
+    const l = lineAt(p, yOf(e));
+    if (!l) return;
+    e.preventDefault();
+    e.stopPropagation();
+    p.drag = { l, start: l.price };
+    p.chart.applyOptions({ handleScroll: false, handleScale: false });
+    document.body.style.cursor = 'ns-resize';
+  }, true);
+  host.addEventListener('mousemove', (e) => {
+    if (p.drag || pt.active !== p.i) return;
+    host.style.cursor = lineAt(p, yOf(e)) ? 'ns-resize' : '';
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!p.drag) return;
+    const price = p.candle.coordinateToPrice(yOf(e));
+    if (price == null || price <= 0) return;
+    p.drag.l.price = +price.toFixed(2);
+    p.drag.l.line.applyOptions({ price: p.drag.l.price, title: `${p.drag.l.title.replace(' ↕', '')} ${money(p.drag.l.price)}` });
+  });
+  window.addEventListener('mouseup', async () => {
+    if (!p.drag) return;
+    const { l, start } = p.drag;
+    p.drag = null;
+    p.justActivated = true; // swallow the click that ends the drag
+    setTimeout(() => (p.justActivated = false), 300);
+    p.chart.applyOptions({ handleScroll: true, handleScale: true });
+    document.body.style.cursor = '';
+    if (l.price === start) return drawLines(p);
+    if (l.meta.field) {
+      $(l.meta.field).value = l.price.toFixed(2);
+      syncTicket();
+      return;
+    }
+    try {
+      applyPaper(await radar.paper.modify(l.meta.order, l.price));
+      $('#ptMsg').innerHTML = `<span class="msg-ok">${esc(l.title.replace(' ↕', ''))} moved to ${money(l.price)}</span>`;
+    } catch (err) {
+      $('#ptMsg').innerHTML = `<span class="msg-err">${esc(String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))}</span>`;
+      drawLines(p); // snap back
+    }
+  });
 }
 const drawAllLines = () => pt.panes.forEach(drawLines);
 
@@ -1017,7 +1086,8 @@ $('#ptSubmit').addEventListener('click', async () => {
       stopLoss: $('#ptUseSL').checked ? +$('#ptSL').value || null : null,
       takeProfit: $('#ptUseTP').checked ? +$('#ptTP').value || null : null, note: pt.note || '',
     });
-    pt.note = '';
+    // The order's own lines replace the ticket's previews.
+    clearTicketLevels();
     applyPaper(d);
     const filled = d.account.fills[0];
     msg.innerHTML = d.account.marketOpen && filled && Date.now() - filled.at < 5000 && filled.symbol === pt.sym

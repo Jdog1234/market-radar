@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('radar', {
     order: (o) => ipcRenderer.invoke('paper:order', o),
     cancel: (id) => ipcRenderer.invoke('paper:cancel', id),
     close: (sym) => ipcRenderer.invoke('paper:close', sym),
+    modify: (id, price) => ipcRenderer.invoke('paper:modify', id, price),
     bracket: (sym, b) => ipcRenderer.invoke('paper:bracket', sym, b),
     reset: (cash) => ipcRenderer.invoke('paper:reset', cash),
     onUpdate: (fn) => ipcRenderer.on('paper:update', (_e, d) => fn(d)),
