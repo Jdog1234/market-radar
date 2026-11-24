@@ -10,7 +10,11 @@ const NAME_BLACKLIST = new Set(
    'stock market nasdaq dow s&p street wall gold silver oil apple hospitality alliance standard summit core equity value ' +
    'peak frontier liberty royal crown pacific atlantic central digital data life health care home trust ' +
    'news fox meta? fortune motorola? coherent ally carrier chart clear exact fair hope mobile open power prime ' +
-   'reliance real select smart solid simply total true unity vital zillow?').split(/\s+/).map((w) => w.replace('?', '')).filter(Boolean)
+   'reliance real select smart solid simply total true unity vital zillow? ' +
+   // ordinary words that are also company names (headlines use them in their usual sense)
+   'bullish strategy post people booking pool wise super popular grab flex freedom toast compass crane banner enact ' +
+   'affirm equitable exponent lineage stride mosaic nova perimeter spire tapestry vertex viking acuity amplitude radian ' +
+   'plexus lear dover marsh toro tidewater seaboard').split(/\s+/).map((w) => w.replace('?', '')).filter(Boolean)
 );
 // Keep a few big names that collide with the list above but matter a lot.
 const ALIASES = {
@@ -29,6 +33,9 @@ const ALIASES = {
   Lucid: 'LCID', 'Robinhood': 'HOOD', MicroStrategy: 'MSTR', 'Dell': 'DELL', 'HP Inc': 'HPQ',
   'Hewlett Packard Enterprise': 'HPE', IBM: 'IBM', Cisco: 'CSCO', Caterpillar: 'CAT', 'Lockheed Martin': 'LMT',
   'CrowdStrike': 'CRWD', Snowflake: 'SNOW', 'Walgreens': 'WBA', CVS: 'CVS', 'Dollar General': 'DG', 'Dollar Tree': 'DLTR',
+  // Full names for companies whose short name is an everyday word (blacklisted above).
+  MicroStrategy: 'MSTR', 'Booking Holdings': 'BKNG', 'Booking.com': 'BKNG', 'Pool Corp': 'POOL', 'Toast Inc': 'TOST',
+  'Grab Holdings': 'GRAB', 'Tapestry Inc': 'TPR', 'Viking Holdings': 'VIK', 'Affirm Holdings': 'AFRM', 'Equitable Holdings': 'EQH',
 };
 
 const SUFFIX = /\b(common stock|ordinary shares?|class [a-c]( common stock| ordinary shares?)?|american depositary (shares|receipts?)|depositary shares?|ads|adr|inc\.?|incorporated|corp\.?|corporation|co\.?|company|ltd\.?|limited|plc|holdings?|group|n\.v\.|s\.a\.|ag|se|lp|l\.p\.|llc|trust|the|new|\(the\)|units?|warrants?|rights?)\b/gi;

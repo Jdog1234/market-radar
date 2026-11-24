@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Market Radar — the news that hasn't been priced in yet</title>
-  <meta name="description" content="Market Radar reads ~3,000 market headlines every scan, finds the stocks whose news hasn't moved the price yet, and shows its own measured track record. Free for Mac and Windows." />
+  <meta name="description" content="Market Radar reads ~3,000 market headlines every scan, finds the stocks whose news hasn't moved the price yet, and shows its own measured track record. Free plan for Mac and Windows; Pro adds trade ideas and real trading through your broker." />
   <meta property="og:title" content="Market Radar" />
   <meta property="og:description" content="The news that hasn't been priced in yet — with a track record you can check." />
   <meta property="og:image" content="img/before-move.jpg" />
@@ -66,14 +66,32 @@
     input[type=email] { width: 320px; max-width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; }
     #formMsg { margin-top: 12px; font-size: 14px; color: var(--muted); min-height: 20px; }
 
+    .pricing { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 860px; margin: 0 auto; text-align: left; }
+    .plan { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 26px; display: flex; flex-direction: column; }
+    .plan.pro { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+    .plan h3 { margin: 0; font-size: 22px; }
+    .plan .price { font-size: 38px; font-weight: 800; letter-spacing: -0.02em; margin: 10px 0 2px; }
+    .plan .price small { font-size: 15px; font-weight: 500; color: var(--muted); }
+    .plan .alt { color: var(--muted); font-size: 14px; min-height: 22px; }
+    .plan .alt b { color: var(--up); }
+    .plan ul { list-style: none; padding: 0; margin: 18px 0 22px; display: grid; gap: 8px; font-size: 15px; flex: 1; }
+    .plan li::before { content: '✓'; color: var(--up); font-weight: 700; margin-right: 8px; }
+    .plan li.no::before { content: '–'; color: var(--muted); }
+    .plan li.no { color: var(--muted); }
+    .plan .btns { display: flex; gap: 10px; flex-wrap: wrap; }
+    .dl { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .help { max-width: 760px; margin: 36px auto 0; text-align: left; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .help .card p { font-size: 14px; }
+    .help ol { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
     footer { border-top: 1px solid var(--line); padding: 30px 0 50px; color: var(--muted); font-size: 13px; }
+    footer .legal a { margin-right: 16px; }
     footer p { margin: 6px 0; max-width: 860px; }
 
     @media (max-width: 860px) {
       nav .links { display: none; }
       .feature, .feature.rev { grid-template-columns: 1fr; gap: 20px; }
       .feature.rev .text { order: 0; }
-      .grid3 { grid-template-columns: 1fr; }
+      .grid3, .pricing, .help { grid-template-columns: 1fr; }
       section { padding: 56px 0; }
     }
   </style>
@@ -82,21 +100,21 @@
   <header class="wrap">
     <nav>
       <a class="brand" href="#"><img src="img/icon.png" alt="" />Market Radar</a>
-      <div class="links"><a href="#features">Features</a><a href="#honest">How it works</a><a href="#download">Download</a></div>
-      <a class="btn ghost" href="#download">Get it free</a>
+      <div class="links"><a href="#features">Features</a><a href="#honest">How it works</a><a href="#pricing">Pricing</a><a href="#download">Download</a></div>
+      <a class="btn ghost" href="#download">Download free</a>
     </nav>
   </header>
 
   <main>
     <div class="wrap hero">
-      <span class="eyebrow">Free beta · Mac &amp; Windows</span>
+      <span class="eyebrow">Mac &amp; Windows · Free plan · Pro from $12.42/month</span>
       <h1>The market news that <span class="up">hasn't been priced in yet.</span></h1>
       <p class="sub">Market Radar reads about 3,000 headlines every scan, scores the catalysts that research shows actually move stocks, and flags the ones the price hasn't reacted to yet. Then it keeps score of its own ideas, in public.</p>
       <div class="cta">
         <a class="btn primary" href="#download">Download free</a>
-        <a class="btn ghost" href="#features">See how it works</a>
+        <a class="btn ghost" href="#pricing">See pricing</a>
       </div>
-      <p class="note">No account needed. Updates itself automatically.</p>
+      <p class="note">Free to download, no account needed. Updates itself automatically.</p>
       <div class="shot"><img src="img/before-move.jpg" alt="Market Radar's Before the move screen listing stocks with unpriced news" /></div>
     </div>
 
@@ -118,18 +136,18 @@
           <div class="text">
             <h3>Trade ideas with the plan built in</h3>
             <p>Every idea comes with an entry, a stop-loss sized to the stock's normal move, a 2:1 target, a time frame based on the catalyst, and a position size for your account.</p>
-            <ul><li>Win rates are measured from past ideas, never invented</li><li>One click sends it to paper trading</li></ul>
+            <ul><li>Win rates are measured from past ideas, never invented</li><li>One click loads the plan into the trading screen</li></ul>
           </div>
           <div class="shot"><img src="img/trade-ideas.jpg" alt="Trade ideas with entry, stop and target" loading="lazy" /></div>
         </div>
 
         <div class="feature">
           <div class="text">
-            <h3>Paper trade on live charts</h3>
-            <p>Practice with fake money before risking real money. Up to four live charts, market, limit and stop orders, and stop-loss and take-profit lines you drag right on the chart.</p>
-            <ul><li>Fills only in market hours, with realistic slippage</li><li>Positions, history and an equity curve</li></ul>
+            <h3>Practice, then trade for real</h3>
+            <p>A TradingView-style trading screen with live streaming prices. Practice in the built-in simulated account, then connect your own <b>Alpaca</b> brokerage account and send real orders from the same charts.</p>
+            <ul><li>Up to four live charts, drawing tools and indicators</li><li>Drag stop-loss and take-profit lines; breakeven and trailing stops in one click</li><li>Every real-money order asks you to confirm, with a size limit you set</li></ul>
           </div>
-          <div class="shot"><img src="img/charts.jpg" alt="Four live charts in the paper trading workspace" loading="lazy" /></div>
+          <div class="shot"><img src="img/charts.jpg" alt="Four live charts on the trading screen" loading="lazy" /></div>
         </div>
 
         <div class="feature rev">
@@ -138,6 +156,12 @@
             <p>Type a ticker and get a verdict on which way the evidence points: news catalysts, trend, analyst consensus, earnings history, insider buying and short interest, each shown with its weight.</p>
           </div>
           <div class="shot"><img src="img/lookup.jpg" alt="Stock lookup verdict for one stock" loading="lazy" /></div>
+        </div>
+
+        <div class="grid3">
+          <div class="card"><h4>Price alerts</h4><p>Set an alert on any price, right on the chart. You get a desktop notification even when the app is in the background.</p></div>
+          <div class="card"><h4>Size by risk</h4><p>Type how much of your account you're willing to lose if the stop is hit, and the share count is worked out for you.</p></div>
+          <div class="card"><h4>Your colors</h4><p>Seven themes including Light, any accent color, and a color-blind-friendly candle set.</p></div>
         </div>
       </div>
     </section>
@@ -154,21 +178,66 @@
       </div>
     </section>
 
-    <section id="download" class="waitlist">
-      <div class="wrap">
-        <h2>Get Market Radar</h2>
-        <p class="lead" style="margin: 0 auto 26px">Free during the beta. Pro plans with real-time data and broker trading are coming.</p>
-        <div class="cta">
-          <a class="btn primary" href="https://github.com/Jdog1234/market-radar/releases/latest">Download for Mac or Windows</a>
+    <section id="pricing" class="honest">
+      <div class="wrap" style="text-align:center">
+        <h2>Simple pricing</h2>
+        <p class="lead" style="margin: 0 auto 34px">Start free. Upgrade when you want the trade ideas and real trading.</p>
+        <div class="pricing">
+          <div class="plan">
+            <h3>Free</h3>
+            <div class="price">$0</div>
+            <div class="alt">Forever, no account needed</div>
+            <ul>
+              <li>Signals from ~180 news sources</li>
+              <li>News feed, watchlist, economic and earnings calendars</li>
+              <li>Track record of every signal</li>
+              <li>Practice trading: 1 chart, 5 open orders</li>
+              <li>Price alerts, themes, keyboard shortcuts</li>
+              <li class="no">Before the move, Trade ideas, Stock lookup</li>
+              <li class="no">Real trading through your broker</li>
+            </ul>
+            <div class="btns"><a class="btn ghost" href="#download">Download free</a></div>
+          </div>
+          <div class="plan pro">
+            <h3>Pro</h3>
+            <div class="price">$19 <small>/ month</small></div>
+            <div class="alt">or $149 / year: <b>save $79 (35%)</b></div>
+            <ul>
+              <li>Everything in Free</li>
+              <li><b>Before the move</b>: news the price hasn't reacted to yet</li>
+              <li><b>Trade ideas</b> with entry, stop, target and position size</li>
+              <li><b>Stock lookup</b> verdict for any US stock</li>
+              <li>Up to 4 live charts, unlimited practice orders</li>
+              <li><b>Real trading</b> through your own Alpaca account</li>
+              <li>Cancel anytime</li>
+            </ul>
+            <div class="btns">
+              <a class="btn primary" href="https://jaew.gumroad.com/l/xpmlvl?wanted=true">Get Pro monthly</a>
+              <a class="btn ghost" href="https://jaew.gumroad.com/l/xpmlvl?wanted=true&amp;recurrence=yearly">Yearly ($149)</a>
+            </div>
+          </div>
         </div>
-        <p class="note">Mac: Apple Silicon (arm64) or Intel (x64) .dmg · Windows: 64-bit installer</p>
-        <div id="waitlist" hidden>
-          <h3 style="margin-top:46px">Join the Pro waitlist</h3>
-          <form id="wlForm">
-            <input type="email" name="email" required placeholder="you@example.com" autocomplete="email" />
-            <button class="btn primary" type="submit">Join waitlist</button>
-          </form>
-          <div id="formMsg"></div>
+        <p class="note">Checkout is handled by Gumroad. After paying you get a license key: paste it into Market Radar under Settings → Market Radar Pro.</p>
+      </div>
+    </section>
+
+    <section id="download" style="text-align:center">
+      <div class="wrap">
+        <h2>Download Market Radar</h2>
+        <p class="lead" style="margin: 0 auto 26px">Free for Mac and Windows. It updates itself, so you always have the latest version.</p>
+        <div class="dl" id="dl">
+          <a class="btn primary" data-asset="arm64.dmg" href="https://github.com/Jdog1234/market-radar/releases/latest">Mac (Apple Silicon)</a>
+          <a class="btn ghost" data-asset="x64.dmg" href="https://github.com/Jdog1234/market-radar/releases/latest">Mac (Intel)</a>
+          <a class="btn ghost" data-asset="Setup" href="https://github.com/Jdog1234/market-radar/releases/latest">Windows (64-bit)</a>
+        </div>
+        <p class="note" id="dlNote">Not sure which Mac you have? Apple menu → About This Mac: "Apple M1/M2/M3/M4" means Apple Silicon.</p>
+        <div class="help">
+          <div class="card"><h4>Mac: "can't be verified" message</h4>
+            <p>Market Radar isn't signed with an Apple developer certificate yet, so macOS asks first.</p>
+            <ol><li>Open the .dmg and drag Market Radar into Applications.</li><li>Open it. If macOS warns you, click <b>Done</b>.</li><li>Go to System Settings → Privacy &amp; Security, scroll down and click <b>Open Anyway</b>.</li></ol></div>
+          <div class="card"><h4>Windows: "Windows protected your PC"</h4>
+            <p>SmartScreen shows this for new apps without a code-signing certificate.</p>
+            <ol><li>Run the installer.</li><li>Click <b>More info</b>.</li><li>Click <b>Run anyway</b>.</li></ol></div>
         </div>
       </div>
     </section>
@@ -177,28 +246,24 @@
   <footer>
     <div class="wrap">
       <p><b>Market Radar</b> provides automated news analysis for education and research. It is not investment advice, and nothing on this site or in the app is a recommendation to buy or sell any security. Trading involves risk of loss. Past results, including the app's track record, do not guarantee future results.</p>
-      <p>Charts by TradingView Lightweight Charts. Market Radar is not affiliated with TradingView.</p>
+      <p>Charts by TradingView Lightweight Charts. Market Radar is not affiliated with TradingView or Alpaca. Brokerage services are provided by Alpaca Securities LLC to customers who open their own Alpaca account.</p>
+      <p class="legal"><a href="terms.html">Terms of Service</a><a href="privacy.html">Privacy Policy</a><a href="risk.html">Risk Disclosure</a><a href="https://jaew.gumroad.com/l/xpmlvl">Contact (via Gumroad)</a></p>
     </div>
   </footer>
 
   <script>
-    // Waitlist: shown only once the backend URL is configured (see market-radar-cloud/README.md).
-    const WAITLIST_URL = '';
-    if (WAITLIST_URL) {
-      document.getElementById('waitlist').hidden = false;
-      document.getElementById('wlForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const msg = document.getElementById('formMsg');
-        msg.textContent = 'Joining…';
-        try {
-          const res = await fetch(WAITLIST_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: e.target.email.value }) });
-          msg.textContent = res.ok ? "You're on the list. We'll email you when Pro opens." : 'Something went wrong. Please try again.';
-          if (res.ok) e.target.reset();
-        } catch {
-          msg.textContent = 'Something went wrong. Please try again.';
+    // Point the download buttons straight at the latest installers (falls back to the release page).
+    fetch('https://api.github.com/repos/Jdog1234/market-radar/releases/latest')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rel) => {
+        if (!rel) return;
+        for (const a of document.querySelectorAll('#dl a[data-asset]')) {
+          const asset = (rel.assets || []).find((x) => x.name.includes(a.dataset.asset) && /\.(dmg|exe)$/.test(x.name));
+          if (asset) a.href = asset.browser_download_url;
         }
-      });
-    }
+        document.getElementById('dlNote').insertAdjacentText('afterbegin', `Version ${rel.tag_name.replace(/^v/, '')}. `);
+      })
+      .catch(() => {});
   </script>
 </body>
 </html>

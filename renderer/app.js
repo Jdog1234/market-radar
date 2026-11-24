@@ -2546,7 +2546,8 @@ async function renderBroker(note = '') {
         <div id="brokerMsg" class="small" style="margin-top:6px">${note}</div></li>
       <li><b class="t">Trade</b>
         Click <b>Alpaca</b> at the top of this screen. Live orders always ask you to confirm first, and orders above your size limit ($5,000 to start) are blocked.</li>
-    </ol>`;
+    </ol>
+    <p class="small muted" style="margin-top:14px">Before trading real money, read the <a data-url="https://jdog1234.github.io/market-radar/risk.html">Risk Disclosure</a>. Alpaca is your broker; its own customer agreement applies to your account.</p>`;
 }
 const brokerMsg = (html) => $('#brokerMsg') && ($('#brokerMsg').innerHTML = html);
 document.addEventListener('submit', async (e) => {
@@ -2647,7 +2648,7 @@ function renderAccount(st) {
       <p class="small muted" style="margin-top:14px">${st.signedIn ? `Your saved key ${esc(st.keyHint || '')} isn't active (the subscription ended or the payment failed). Renew on Gumroad, then click Check again, or paste a new key.` : 'Already subscribed? Paste the license key from your Gumroad receipt:'}</p>
       ${keyForm}
       ${st.signedIn ? '<div class="acct-form"><button class="btn ghost" id="acctRefresh">Check again</button><button class="btn ghost" id="acctBilling">Manage subscription</button><button class="btn ghost" id="acctOut">Remove key</button></div>' : ''}
-      <div id="acctMsg" class="small" style="margin-top:8px"></div>`;
+      <div id="acctMsg" class="small" style="margin-top:8px"></div><p class="small muted" style="margin-top:10px">By subscribing you agree to the <a data-url="https://jdog1234.github.io/market-radar/terms.html">Terms of Service</a>. See also the <a data-url="https://jdog1234.github.io/market-radar/privacy.html">Privacy Policy</a> and <a data-url="https://jdog1234.github.io/market-radar/risk.html">Risk Disclosure</a>.</p>`;
     return;
   }
   const until = st.periodEnd ? ` · ends ${new Date(st.periodEnd).toLocaleDateString()}` : st.recurrence ? ` · renews ${esc(st.recurrence)}` : '';
