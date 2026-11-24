@@ -2,5 +2,5 @@
   "_comment": "Pro subscriptions via Gumroad license keys. Subscriptions turn on when checkoutUrl is set (after the Gumroad product is published); paywall=true then locks Pro features for free users.",
   "gumroadProductId": "jMarS8vAA-X32ooJSfKONg==",
   "checkoutUrl": "https://jaew.gumroad.com/l/xpmlvl",
-  "paywall": false
+  "paywall": true
 }
