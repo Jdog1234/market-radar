@@ -1574,12 +1574,15 @@ function syncTicket() {
   buildOrderLines();
 }
 
-async function ptSetSymbol(sym) {
+async function ptSetSymbol(sym, { keepTicket = false } = {}) {
   sym = String(sym || '').toUpperCase().trim();
   if (!sym) return;
   const changed = sym !== pt.sym || !pt.bars.length;
+  // The ticket's limit/stop-loss/take-profit belong to the old stock: never carry them over.
+  if (sym !== pt.sym && !keepTicket) clearTicketLevels();
   pt.sym = sym;
   store.set('pt.sym', sym);
+  saveSlot();
   $('#ptSym').value = sym;
   $$('#ptWatch .tv-wrow').forEach((r) => r.classList.toggle('on', r.dataset.wsym === sym));
   if (changed) {
@@ -1593,7 +1596,7 @@ async function ptSetSymbol(sym) {
   renderQuick();
   syncTicket();
   const load = changed ? loadCandles() : null;
-  applyPaper(await radar.paper.watch([sym, ...watchSyms()]));
+  applyPaper(await radar.paper.watch(paperSyms()));
   await load;
 }
 
@@ -1610,6 +1613,10 @@ function applyPaper(d) {
   renderTabs();
   liveCandle(pt.quotes[pt.sym]);
   for (const s of watchSyms()) updateWatchRow(s);
+  for (const m of visibleMinis()) {
+    miniLive(m, pt.quotes[m.sym]);
+    miniLines(m);
+  }
   syncTicket();
 }
 
@@ -1626,6 +1633,7 @@ function applyTick(d) {
     refreshLineText();
   }
   for (const s of Object.keys(d.quotes || {})) updateWatchRow(s);
+  for (const m of visibleMinis()) if (d.quotes?.[m.sym]) miniLive(m, d.quotes[m.sym]);
   renderFeed();
 }
 
@@ -1642,7 +1650,7 @@ function openPaper(prefill = {}) {
   $('#ptTP').value = prefill.takeProfit ? prefill.takeProfit.toFixed(2) : '';
   pt.note = prefill.note || '';
   $('#ptMsg').innerHTML = prefill.note ? `<span class="muted">Loaded from Trade ideas: ${esc(prefill.note)}. Check the levels, then place the order.</span>` : '';
-  ptSetSymbol(prefill.symbol || pt.sym);
+  ptSetSymbol(prefill.symbol || pt.sym, { keepTicket: true });
 }
 
 // Called by showView when the paper page opens.
@@ -1654,9 +1662,196 @@ function enterPaper() {
   $$('#ptTf button').forEach((x) => x.classList.toggle('on', x.dataset.tf === pt.tf));
   $$('#ptType2 button').forEach((x) => x.classList.toggle('on', x.dataset.ct === pt.ctype));
   if (!pt.bars.length) ptSetSymbol(pt.sym);
-  else radar.paper.watch([pt.sym, ...watchSyms()]).then(applyPaper);
+  else radar.paper.watch(paperSyms()).then(applyPaper);
+  buildGrid();
   startFrames();
 }
+
+// ---- multi-chart layouts ----
+// Each slot is one chart: { sym, tf }. The selected slot is the full chart above (drawings,
+// indicators, draggable lines, BUY/SELL); the others are live mini charts with their own
+// position and order lines. Clicking a mini chart selects it.
+const LAYOUT_N = { 1: 1, 2: 2, '2v': 2, 4: 4 };
+pt.layout = String(store.get('pt.layout', '1'));
+if (!LAYOUT_N[pt.layout]) pt.layout = '1';
+pt.active = Math.max(0, Math.min(3, Number(store.get('pt.active', 0)) || 0));
+pt.slots = store.get('pt.slots', null) || ['SPY', 'QQQ', 'NVDA', 'AAPL'].map((sym) => ({ sym, tf: '5m' }));
+pt.slots[pt.active] = { sym: pt.sym, tf: pt.tf };
+pt.minis = [];
+
+function saveSlot() {
+  pt.slots[pt.active] = { sym: pt.sym, tf: pt.tf };
+  store.set('pt.slots', pt.slots);
+  store.set('pt.active', pt.active);
+}
+const visibleMinis = () => pt.minis.filter((m, i) => m && i < LAYOUT_N[pt.layout] && i !== pt.active);
+const paperSyms = () => [...new Set([pt.sym, ...visibleMinis().map((m) => m.sym), ...watchSyms()])];
+
+function clearTicketLevels() {
+  $('#ptPrice').value = '';
+  $('#ptSL').value = '';
+  $('#ptTP').value = '';
+  $('#ptUseSL').checked = false;
+  $('#ptUseTP').checked = false;
+  $('#ptType').value = 'market';
+  pt.note = '';
+}
+
+function makeMini(i) {
+  const el = document.createElement('div');
+  el.className = 'tv-mini';
+  el.innerHTML = '<div class="mini-chart"></div><div class="mini-head"></div><div class="mini-msg hidden"></div>';
+  const grid = 'rgba(42,46,57,0.55)';
+  const chart = LWC.createChart($('.mini-chart', el), {
+    autoSize: true,
+    layout: { background: { color: TV.bg }, textColor: '#b2b5be', fontSize: 10 },
+    grid: { vertLines: { color: grid }, horzLines: { color: grid } },
+    timeScale: { timeVisible: true, secondsVisible: false, borderColor: TV.line, rightOffset: 6 },
+    rightPriceScale: { borderColor: TV.line, scaleMargins: { top: 0.15, bottom: 0.08 } },
+    crosshair: { mode: LWC.CrosshairMode.Normal },
+  });
+  const vol = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false });
+  vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  const series = chart.addCandlestickSeries({ upColor: TV.up, downColor: TV.down, borderVisible: false, wickUpColor: TV.up, wickDownColor: TV.down, priceLineColor: '#5d606b', priceLineStyle: 2 });
+  const m = { i, el, chart, series, vol, sym: null, tf: null, bars: [], loading: 0, lines: [], lineSig: '' };
+  el.addEventListener('mousedown', () => selectSlot(m.i));
+  return m;
+}
+
+function miniMsg(m, text) {
+  const x = $('.mini-msg', m.el);
+  x.textContent = text;
+  x.classList.toggle('hidden', !text);
+}
+
+function miniHead(m) {
+  const q = pt.quotes[m.sym];
+  const chg = q?.last && q?.prevClose ? q.last - q.prevClose : null;
+  const cls = chg == null ? '' : chg >= 0 ? 'up' : 'down';
+  $('.mini-head', m.el).innerHTML = `<b>${esc(m.sym)}</b><i>${esc(TF_LABEL[m.tf] || m.tf)}</i>${q?.last ? `<span class="${cls}">${fmtPx(q.last)}</span>` : ''}${chg != null ? `<span class="${cls}">${chg >= 0 ? '+' : ''}${((chg / q.prevClose) * 100).toFixed(2)}%</span>` : ''}`;
+}
+
+async function loadMini(m, sym, tf) {
+  if (m.sym === sym && m.tf === tf && m.bars.length) return;
+  m.sym = sym;
+  m.tf = tf;
+  const seq = ++m.loading;
+  // Clear the old symbol's candles and lines straight away so nothing stale shows.
+  m.bars = [];
+  m.series.setData([]);
+  m.vol.setData([]);
+  miniLines(m, true);
+  miniHead(m);
+  miniMsg(m, `Loading ${sym}…`);
+  try {
+    const { bars } = await radar.paper.candles(sym, tf);
+    if (seq !== m.loading) return;
+    if (!bars.length) return miniMsg(m, `No chart data for ${sym}`);
+    m.bars = bars;
+    m.series.setData(bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
+    m.vol.setData(bars.map(volPoint));
+    m.chart.timeScale().fitContent();
+    if (bars.length > 120) m.chart.timeScale().setVisibleLogicalRange({ from: bars.length - 120, to: bars.length + 6 });
+    miniMsg(m, '');
+    miniLive(m, pt.quotes[sym]);
+  } catch {
+    if (seq === m.loading) miniMsg(m, `Chart data unavailable for ${sym}`);
+  }
+}
+
+// Live price into a mini chart's last candle (same bucketing as the main chart, no volume).
+function miniLive(m, q) {
+  if (q) miniHead(m);
+  if (!q || !m.bars.length) return;
+  const regular = pt.acct?.marketOpen && q.session !== 'pre' && q.session !== 'post';
+  const price = regular ? q.last : q.ext?.last || q.last;
+  if (!(price > 0)) return;
+  let last = m.bars.at(-1);
+  const span = TF_SEC[m.tf];
+  if (span) {
+    const now = nowEtAsUtc();
+    const bucket = now - (now % span);
+    if (bucket > last.time) {
+      if (!regular && !q.ext) return;
+      last = { time: bucket, open: last.close, high: Math.max(last.close, price), low: Math.min(last.close, price), close: price, volume: 0 };
+      m.bars.push(last);
+    }
+  } else if (!regular) return;
+  last.close = price;
+  last.high = Math.max(last.high, price);
+  last.low = Math.min(last.low, price);
+  m.series.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: last.close });
+}
+
+// Position and working-order lines for the mini chart's own symbol (select the chart to drag them).
+function miniLines(m, clear = false) {
+  const a = pt.acct;
+  const defs = [];
+  if (a && !clear) {
+    const pos = a.positions.find((p) => p.symbol === m.sym);
+    if (pos) defs.push({ price: pos.avg, color: TV.blue, title: `${pos.qty > 0 ? 'LONG' : 'SHORT'} ${Math.abs(pos.qty)}` });
+    for (const o of a.orders.filter((x) => x.symbol === m.sym && x.status === 'working')) {
+      if (o.role === 'stop') defs.push({ price: o.price, color: TV.down, title: `SL ${o.qty}` });
+      else if (o.role === 'target') defs.push({ price: o.price, color: TV.up, title: `TP ${o.qty}` });
+      else if (o.type !== 'market') defs.push({ price: o.price, color: o.side === 'buy' ? TV.blue : TV.down, title: `${o.side === 'buy' ? 'BUY' : 'SELL'} ${o.type === 'limit' ? 'LMT' : 'STP'} ${o.qty}` });
+    }
+  }
+  const sig = JSON.stringify(defs);
+  if (sig === m.lineSig) return;
+  m.lineSig = sig;
+  for (const l of m.lines) m.series.removePriceLine(l);
+  m.lines = defs.map((d) => m.series.createPriceLine({ price: d.price, color: d.color, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: d.title }));
+}
+
+// Lay out the grid: the full chart sits in the selected slot, mini charts in the rest.
+function buildGrid() {
+  const n = LAYOUT_N[pt.layout];
+  if (pt.active >= n) {
+    // The selected chart moves into the first slot when the layout shrinks.
+    [pt.slots[0], pt.slots[pt.active]] = [pt.slots[pt.active], pt.slots[0]];
+    pt.active = 0;
+    saveSlot();
+  }
+  const grid = $('#ptGrid');
+  grid.className = `tv-grid l${pt.layout}`;
+  $$('#ptLayout button').forEach((b) => b.classList.toggle('on', b.dataset.l === pt.layout));
+  const cells = [];
+  for (let i = 0; i < n; i++) {
+    if (i === pt.active) {
+      cells.push($('#ptChartWrap'));
+      continue;
+    }
+    if (LWC && !pt.minis[i]) pt.minis[i] = makeMini(i);
+    if (!pt.minis[i]) continue;
+    cells.push(pt.minis[i].el);
+    loadMini(pt.minis[i], pt.slots[i].sym, pt.slots[i].tf);
+    miniLines(pt.minis[i]);
+  }
+  grid.replaceChildren(...cells);
+}
+
+function selectSlot(i) {
+  if (i === pt.active) return;
+  pt.active = i;
+  const s = pt.slots[i];
+  const tfChanged = s.tf !== pt.tf;
+  pt.tf = s.tf;
+  store.set('pt.tf', pt.tf);
+  $$('#ptTf button').forEach((x) => x.classList.toggle('on', x.dataset.tf === pt.tf));
+  renderIndMenu();
+  buildGrid();
+  if (tfChanged) pt.bars = []; // same symbol on another timeframe still needs new candles
+  ptSetSymbol(s.sym);
+}
+
+$('#ptLayout').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b || b.dataset.l === pt.layout) return;
+  pt.layout = b.dataset.l;
+  store.set('pt.layout', pt.layout);
+  buildGrid();
+  radar.paper.watch(paperSyms()).then(applyPaper);
+});
 
 // ---- top toolbar ----
 let ptSugg = [];
@@ -1705,6 +1900,7 @@ $('#ptTf').addEventListener('click', (e) => {
   if (!b) return;
   pt.tf = b.dataset.tf;
   store.set('pt.tf', pt.tf);
+  saveSlot();
   $$('#ptTf button').forEach((x) => x.classList.toggle('on', x === b));
   renderIndMenu();
   loadCandles();

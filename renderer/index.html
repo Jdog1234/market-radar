@@ -133,6 +133,10 @@
           <button data-ct="candles" class="on" title="Candles">Candles</button><button data-ct="bars" title="Bars">Bars</button><button data-ct="line" title="Line">Line</button>
         </div>
         <div class="tv-sep"></div>
+        <div class="tv-group tv-layout" id="ptLayout" title="Chart layout">
+          <button data-l="1" class="on" title="One chart">▢</button><button data-l="2" title="Two side by side">◫</button><button data-l="2v" title="Two stacked">⬒</button><button data-l="4" title="Four charts">⊞</button>
+        </div>
+        <div class="tv-sep"></div>
         <div class="tv-menuwrap">
           <button id="ptIndBtn" class="tv-btn">ƒx Indicators ▾</button>
           <div id="ptIndMenu" class="tv-menu hidden"></div>
@@ -150,6 +154,7 @@
           <button data-tool="clear" title="Delete all drawings for this symbol"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button>
         </div>
         <div class="tv-center">
+          <div class="tv-grid l1" id="ptGrid">
           <div class="tv-chartwrap" id="ptChartWrap">
             <div id="ptChart" class="tv-chart"></div>
             <canvas id="ptDrawCanvas" class="tv-drawcanvas"></canvas>
@@ -162,6 +167,7 @@
             </div>
             <div id="ptCtx" class="tv-menu tv-ctx hidden"></div>
             <div id="ptToast" class="tv-toast hidden"></div>
+          </div>
           </div>
           <div class="tv-bottom" id="ptBottom">
             <div class="tv-resize" id="ptResize"></div>

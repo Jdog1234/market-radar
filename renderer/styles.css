@@ -274,7 +274,7 @@ body.paper-mode .top, body.paper-mode .disclaimer { display: none; }
 .tv-draw-sep { width: 24px; height: 1px; background: var(--tv-line); margin: 4px 0; }
 
 .tv-center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.tv-chartwrap { position: relative; flex: 1; min-height: 120px; overflow: hidden; }
+.tv-chartwrap { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .tv-chart { position: absolute; inset: 0; }
 .tv-drawcanvas { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
 .tv-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
@@ -305,6 +305,23 @@ body.paper-mode .top, body.paper-mode .disclaimer { display: none; }
 .ol .tag .x:hover { color: #fff; background: var(--tv-down); }
 .ol.drag .tag { cursor: ns-resize; }
 .ol.dragging .tag { box-shadow: 0 0 0 2px var(--c); }
+/* multi-chart layouts: the selected chart has every tool; the others are live mini charts */
+.tv-grid { flex: 1; display: grid; gap: 2px; min-height: 0; background: var(--tv-line); }
+.tv-grid.l2 { grid-template-columns: 1fr 1fr; }
+.tv-grid.l2v { grid-template-rows: 1fr 1fr; }
+.tv-grid.l4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.tv-grid > * { min-width: 0; min-height: 0; background: var(--tv-bg); }
+.tv-grid:not(.l1) > .tv-chartwrap { box-shadow: inset 0 0 0 1px var(--tv-blue); }
+.tv-mini { position: relative; overflow: hidden; cursor: pointer; }
+.tv-mini .mini-chart { position: absolute; inset: 0; }
+.tv-mini .mini-head { position: absolute; left: 10px; top: 6px; z-index: 2; pointer-events: none; font-size: 12px; display: flex; gap: 8px; align-items: baseline; }
+.tv-mini .mini-head b { font-size: 14px; }
+.tv-mini .mini-head i { font-style: normal; color: var(--tv-muted); }
+.tv-mini .mini-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--tv-muted); font-size: 13px; pointer-events: none; }
+.tv-mini:hover { box-shadow: inset 0 0 0 1px #5d606b; }
+.tv-grid:not(.l1) .tv-quick { top: auto; bottom: 36px; }
+.tv-layout button { font-size: 15px; padding: 3px 7px; }
+.tv-layout button.on { color: var(--tv-blue); }
 .tv-chartwrap.ns { cursor: ns-resize; }
 .tv-chartwrap.cross { cursor: crosshair; }
 
