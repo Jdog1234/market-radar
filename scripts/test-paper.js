@@ -249,5 +249,85 @@ test('state survives a reload from disk', () => {
   near(b.s.cash, 5000 - 600.1, 'cash');
 });
 
+test('protect adds a stop-loss and take-profit to a position (one cancels the other)', () => {
+  const a = fresh();
+  a.tick({ AMD: q(100, 99.99, 100.01) });
+  a.place({ symbol: 'AMD', side: 'buy', qty: 10 });
+  a.protect('AMD', { stopLoss: 95, takeProfit: 110 });
+  const [stop, target] = working(a);
+  assert.strictEqual(stop.role, 'stop');
+  assert.strictEqual(target.role, 'target');
+  assert.strictEqual(stop.group, target.group);
+  a.tick({ AMD: q(110.5, 110.49, 110.51) });
+  assert.strictEqual(target.status, 'filled');
+  assert.strictEqual(stop.status, 'cancelled');
+  assert.strictEqual(a.s.positions.AMD, undefined);
+});
+
+test('protect rejects a stop above the price on a long', () => {
+  const a = fresh();
+  a.tick({ AMD: q(100, 99.99, 100.01) });
+  a.place({ symbol: 'AMD', side: 'buy', qty: 10 });
+  assert.throws(() => a.protect('AMD', { stopLoss: 101 }));
+  assert.strictEqual(working(a).length, 0);
+});
+
+test('breakeven moves the stop to the average fill', () => {
+  const a = fresh();
+  a.tick({ AMD: q(100, 99.99, 100.01) });
+  a.place({ symbol: 'AMD', side: 'buy', qty: 10, stopLoss: 95 });
+  a.tick({ AMD: q(104, 103.99, 104.01) });
+  a.breakeven('AMD');
+  near(working(a)[0].price, 100.01, 'stop at avg');
+});
+
+test('a trailing stop follows the price up and never back down', () => {
+  const a = fresh();
+  a.tick({ AMD: q(100, 99.99, 100.01) });
+  a.place({ symbol: 'AMD', side: 'buy', qty: 10 });
+  a.trail('AMD', 2);
+  const stop = working(a)[0];
+  near(stop.price, 98, 'initial trail');
+  a.tick({ AMD: q(105, 104.99, 105.01) });
+  near(stop.price, 103, 'trailed up');
+  a.tick({ AMD: q(104, 103.99, 104.01) });
+  near(stop.price, 103, 'held');
+  a.tick({ AMD: q(102.9, 102.89, 102.91) });
+  assert.strictEqual(stop.status, 'filled');
+  assert.strictEqual(a.s.positions.AMD, undefined);
+});
+
+test('a short trailing stop follows the price down', () => {
+  const a = fresh();
+  a.tick({ AMD: q(100, 99.99, 100.01) });
+  a.place({ symbol: 'AMD', side: 'sell', qty: 10 });
+  a.trail('AMD', 1.5);
+  const stop = working(a)[0];
+  near(stop.price, 101.5, 'initial');
+  a.tick({ AMD: q(96, 95.99, 96.01) });
+  near(stop.price, 97.5, 'trailed down');
+});
+
+test('reverse flips a long into a short of the same size', () => {
+  const a = fresh();
+  a.tick({ AMD: q(100, 99.99, 100.01) });
+  a.place({ symbol: 'AMD', side: 'buy', qty: 10, stopLoss: 95 });
+  a.reverse('AMD');
+  assert.strictEqual(a.s.positions.AMD.qty, -10);
+  assert.strictEqual(working(a).length, 0);
+});
+
+test('close all and cancel all', () => {
+  const a = fresh();
+  a.tick({ AMD: q(100, 99.99, 100.01), KO: q(60, 59.99, 60.01) });
+  a.place({ symbol: 'AMD', side: 'buy', qty: 10, stopLoss: 95 });
+  a.place({ symbol: 'KO', side: 'sell', qty: 5 });
+  a.place({ symbol: 'KO', side: 'buy', qty: 5, type: 'limit', price: 50 });
+  a.cancelAll();
+  assert.strictEqual(working(a).length, 0);
+  a.closeAll();
+  assert.deepStrictEqual(Object.keys(a.s.positions), []);
+});
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(`\n${passed} passed${process.exitCode ? ', some FAILED' : ''}`);

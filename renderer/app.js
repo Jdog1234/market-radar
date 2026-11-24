@@ -666,6 +666,59 @@ const store = {
   },
 };
 const TV = { bg: '#131722', line: '#2a2e39', text: '#d1d4dc', muted: '#787b86', up: '#089981', down: '#f23645', blue: '#2962ff', warn: '#f5a524' };
+// '#rrggbb' + opacity → rgba(), for chart colors (the chart library doesn't read CSS variables).
+const alpha = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+};
+
+// ---- color themes (Settings → Appearance) ----
+// base: app background + chart workspace; accent: buttons, highlights, buy side; candles: up/down.
+const THEMES = {
+  midnight: { name: 'Midnight', app: ['#0b0f14', '#121820', '#18202a', '#232d3a', '#e6edf3', '#8b98a8'], tv: ['#131722', '#1e222d', '#2a2e39', '#2a2e39', '#d1d4dc', '#787b86'] },
+  tv: { name: 'Charcoal', app: ['#131722', '#1e222d', '#252a36', '#2a2e39', '#d1d4dc', '#868993'], tv: ['#131722', '#1e222d', '#2a2e39', '#2a2e39', '#d1d4dc', '#787b86'] },
+  ocean: { name: 'Ocean', app: ['#08131f', '#0e1d2e', '#142740', '#1d3552', '#e3ecf7', '#8aa2bf'], tv: ['#0b1828', '#11233a', '#1c3350', '#183049', '#dbe6f3', '#7f95b3'] },
+  forest: { name: 'Forest', app: ['#0a120e', '#101b15', '#16241c', '#22342a', '#e4efe8', '#8ea596'], tv: ['#0d1611', '#14211a', '#213328', '#1b2b22', '#dce8e0', '#82988a'] },
+  plum: { name: 'Plum', app: ['#120c17', '#1b1322', '#231a2d', '#33263f', '#efe6f5', '#a596b2'], tv: ['#150f1b', '#1f1628', '#30243c', '#2a1f35', '#e8def0', '#9a8aa8'] },
+  graphite: { name: 'Graphite', app: ['#111111', '#1a1a1a', '#222222', '#2e2e2e', '#ececec', '#9a9a9a'], tv: ['#151515', '#1d1d1d', '#2c2c2c', '#262626', '#dddddd', '#8a8a8a'] },
+  light: { name: 'Light', light: true, app: ['#f3f5f8', '#ffffff', '#eceff4', '#d8dde5', '#131722', '#5d6673'], tv: ['#ffffff', '#f6f7f9', '#e0e3eb', '#eef0f4', '#131722', '#6a6d78'] },
+};
+const ACCENTS = { blue: '#2962ff', sky: '#4f9cf9', purple: '#7e57c2', teal: '#00a3a3', orange: '#f57c00', pink: '#e91e63', gold: '#d4a017' };
+const CANDLES = {
+  classic: { name: 'Teal / red', up: '#089981', down: '#f23645' },
+  green: { name: 'Green / red', up: '#22c55e', down: '#ef4444' },
+  cb: { name: 'Blue / orange (color-blind friendly)', up: '#2196f3', down: '#ff9800' },
+  mono: { name: 'White / gray', up: '#e0e0e0', down: '#6b6b6b' },
+};
+const themePrefs = () => {
+  let t = {};
+  try {
+    t = JSON.parse(localStorage.getItem('mr.theme') || '{}') || {};
+  } catch {}
+  return { base: THEMES[t.base] ? t.base : 'midnight', accent: /^#[0-9a-f]{6}$/i.test(t.accent || '') ? t.accent : ACCENTS.blue, candles: CANDLES[t.candles] ? t.candles : 'classic' };
+};
+function applyTheme(prefs = themePrefs()) {
+  const th = THEMES[prefs.base];
+  const c = CANDLES[prefs.candles];
+  const r = document.documentElement.style;
+  ['--bg', '--panel', '--panel2', '--line', '--text', '--muted'].forEach((k, i) => r.setProperty(k, th.app[i]));
+  ['--tv-bg', '--tv-panel', '--tv-line', '--tv-hover', '--tv-text', '--tv-muted'].forEach((k, i) => r.setProperty(k, th.tv[i]));
+  r.setProperty('--accent', prefs.accent);
+  r.setProperty('--tv-blue', prefs.accent);
+  // The light theme's candles need a little more depth to read on white.
+  r.setProperty('--up', c.up);
+  r.setProperty('--down', c.down);
+  r.setProperty('--tv-up', c.up);
+  r.setProperty('--tv-down', c.down);
+  r.setProperty('--up-bg', alpha(c.up, 0.12));
+  r.setProperty('--down-bg', alpha(c.down, 0.12));
+  document.documentElement.style.colorScheme = th.light ? 'light' : 'dark';
+  document.body.classList.toggle('light', !!th.light);
+  Object.assign(TV, { bg: th.tv[0], line: th.tv[2], text: th.tv[4], muted: th.tv[5], up: c.up, down: c.down, blue: prefs.accent });
+  if (applyTheme.live) rethemeCharts();
+}
+applyTheme();
+applyTheme.live = true;
 const TF_SEC = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600 };
 const TF_LABEL = { '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h', D: '1D', W: '1W' };
 const IND = {
@@ -681,7 +734,7 @@ const pt = {
   ind: { vol: true, vwap: false, ema9: false, ema21: false, sma50: false, sma200: false, ...store.get('pt.ind', {}) },
   side: 'buy', chart: null, main: null, vol: null, indSeries: {}, indData: {}, indDirty: false, bars: [], acct: null, quotes: {}, feed: null,
   tab: 'pos', eqChart: null, eqLine: null, loading: 0, note: '', tool: 'cursor', pending: null, mouse: null, drawings: [], hlineObjs: [],
-  olines: [], olSig: '', drag: null, crosshair: false, dayVol: {}, raf: 0, canvasSig: '', panelDown: false,
+  olines: [], olSig: '', drag: null, alerts: [], hoverPrice: null, sizeMode: store.get('pt.sizeMode', 'sh'), ticketPx: null, crosshair: false, dayVol: {}, raf: 0, canvasSig: '', panelDown: false,
 };
 
 const tick = (p) => (p >= 1 ? 0.01 : 0.0001);
@@ -704,20 +757,25 @@ function toast(msg, err = false) {
 }
 
 // ---- chart ----
+// Colors every chart shares (re-applied when the theme changes).
+const chartColors = (fontSize = 11) => ({
+  layout: { background: { color: TV.bg }, textColor: TV.text, fontSize },
+  grid: { vertLines: { color: alpha(TV.line, 0.55) }, horzLines: { color: alpha(TV.line, 0.55) } },
+  timeScale: { borderColor: TV.line },
+  rightPriceScale: { borderColor: TV.line },
+  crosshair: { vertLine: { color: TV.muted, labelBackgroundColor: TV.line }, horzLine: { color: TV.muted, labelBackgroundColor: TV.line } },
+});
+const candleColors = () => ({ upColor: TV.up, downColor: TV.down, borderVisible: false, wickUpColor: TV.up, wickDownColor: TV.down });
+
 function ensureChart() {
   if (pt.chart || !LWC) return;
-  const grid = 'rgba(42,46,57,0.55)';
+  const base = chartColors();
   pt.chart = LWC.createChart($('#ptChart'), {
+    ...base,
     autoSize: true,
-    layout: { background: { color: TV.bg }, textColor: '#b2b5be', fontSize: 11 },
-    grid: { vertLines: { color: grid }, horzLines: { color: grid } },
-    timeScale: { timeVisible: true, secondsVisible: false, borderColor: TV.line, rightOffset: 8 },
-    rightPriceScale: { borderColor: TV.line, scaleMargins: { top: 0.12, bottom: 0.08 } },
-    crosshair: {
-      mode: LWC.CrosshairMode.Normal,
-      vertLine: { color: '#758696', labelBackgroundColor: '#363a45' },
-      horzLine: { color: '#758696', labelBackgroundColor: '#363a45' },
-    },
+    timeScale: { ...base.timeScale, timeVisible: true, secondsVisible: false, rightOffset: 8 },
+    rightPriceScale: { ...base.rightPriceScale, scaleMargins: { top: 0.12, bottom: 0.08 } },
+    crosshair: { ...base.crosshair, mode: LWC.CrosshairMode.Normal },
   });
   pt.vol = pt.chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false });
   pt.vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
@@ -734,17 +792,17 @@ function makeMainSeries() {
     pt.olSig = '';
     pt.hlineObjs = [];
   }
-  const common = { priceLineColor: '#5d606b', priceLineStyle: 2 };
+  const common = { priceLineColor: TV.muted, priceLineStyle: 2 };
   if (pt.ctype === 'line') pt.main = pt.chart.addLineSeries({ ...common, color: TV.blue, lineWidth: 2 });
   else if (pt.ctype === 'bars') pt.main = pt.chart.addBarSeries({ ...common, upColor: TV.up, downColor: TV.down, thinBars: false });
-  else pt.main = pt.chart.addCandlestickSeries({ ...common, upColor: TV.up, downColor: TV.down, borderVisible: false, wickUpColor: TV.up, wickDownColor: TV.down });
+  else pt.main = pt.chart.addCandlestickSeries({ ...common, ...candleColors() });
   setMainData();
   drawHLines();
   buildOrderLines(true);
 }
 
 const mainPoint = (b) => (pt.ctype === 'line' ? { time: b.time, value: b.close } : { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close });
-const volPoint = (b) => ({ time: b.time, value: b.volume || 0, color: b.close >= b.open ? 'rgba(8,153,129,0.45)' : 'rgba(242,54,69,0.45)' });
+const volPoint = (b) => ({ time: b.time, value: b.volume || 0, color: alpha(b.close >= b.open ? TV.up : TV.down, 0.45) });
 
 function setMainData() {
   if (!pt.main) return;
@@ -764,13 +822,23 @@ async function loadCandles() {
     pt.bars = bars;
     pt.dayVol[sym] = null;
     setMainData();
-    pt.chart.timeScale().fitContent();
-    if (bars.length > 150) pt.chart.timeScale().setVisibleLogicalRange({ from: bars.length - 150, to: bars.length + 8 });
+    resetView();
     liveCandle(pt.quotes[sym]);
     renderLegend();
   } catch {
     if (seq === pt.loading) toast(`Chart data unavailable for ${sym}.`, true);
   }
+}
+
+// A new stock or timeframe always starts framed on its own candles: dragging or zooming the
+// price axis turns auto-scaling off, which would leave a $500 stock's candles off-screen on a
+// chart still scaled for a $150 one.
+function resetView() {
+  if (!pt.main) return;
+  pt.main.priceScale().applyOptions({ autoScale: true });
+  pt.chart.timeScale().fitContent();
+  const n = pt.bars.length;
+  if (n > 150) pt.chart.timeScale().setVisibleLogicalRange({ from: n - 150, to: n + 8 });
 }
 
 // New York clock written as UTC seconds (matches the candle timestamps).
@@ -890,6 +958,7 @@ function onCrosshair(param) {
   pt.crosshair = !!(param && param.time && param.point);
   renderLegend(pt.crosshair ? param.time : null);
   if (pt.tool === 'trend' && pt.pending && param?.point) pt.mouse = param.point;
+  pt.hoverPrice = param?.point && pt.main ? pt.main.coordinateToPrice(param.point.y) : null;
 }
 function renderLegend(time = null) {
   const bars = pt.bars;
@@ -974,6 +1043,17 @@ function orderLineDefs() {
       if (o.stopLoss) defs.push({ key: `o${o.id}sl`, price: o.stopLoss, color: TV.down, k: `SL ${o.qty} (at open)`, v: (p) => fmtPx(p), x: () => radar.paper.modify(o.id, { stopLoss: null }) });
       if (o.takeProfit) defs.push({ key: `o${o.id}tp`, price: o.takeProfit, color: TV.up, k: `TP ${o.qty} (at open)`, v: (p) => fmtPx(p), x: () => radar.paper.modify(o.id, { takeProfit: null }) });
     }
+  }
+  // Price alerts (drag to move, × to delete).
+  for (const al of pt.alerts.filter((x) => x.symbol === pt.sym && !x.firedAt)) {
+    defs.push({
+      key: `al${al.id}`, price: al.price, color: TV.warn, k: `ALERT ${al.dir === 'above' ? '↑' : '↓'}`, v: (p) => fmtPx(p), dashed: true,
+      drag: async (p) => {
+        const d = await radar.paper.addAlert({ symbol: al.symbol, price: p, note: al.note });
+        return radar.paper.removeAlert(al.id).then(() => d);
+      },
+      x: () => radar.paper.removeAlert(al.id),
+    });
   }
   // The ticket's levels before the order is sent (drag to adjust, × to clear).
   const type = $('#ptType').value;
@@ -1080,7 +1160,7 @@ function drawHLines() {
       pt.main.removePriceLine(h);
     } catch {}
   }
-  pt.hlineObjs = pt.drawings.filter((d) => d.t === 'h').map((d) => pt.main.createPriceLine({ price: d.p, color: '#b2b5be', lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: '' }));
+  pt.hlineObjs = pt.drawings.filter((d) => d.t === 'h').map((d) => pt.main.createPriceLine({ price: d.p, color: TV.text, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: '' }));
 }
 // Bar time ↔ logical index (with extrapolation past either end), so drawings survive timeframe changes.
 function barSpan() {
@@ -1312,6 +1392,15 @@ function setupChartMouse() {
   });
 }
 
+// Right-click on a chart with an open position: put its stop-loss or take-profit at that price.
+function positionCtx(price) {
+  const pos = pt.acct?.positions.find((x) => x.symbol === pt.sym);
+  const last = pt.quotes[pt.sym]?.last;
+  if (!pos || !last) return '';
+  const long = pos.qty > 0;
+  const slOk = long ? price < last : price > last;
+  return `<div class="msep"></div>${slOk ? `<div class="mi sell" data-ctx="psl:${price}">Set stop-loss @ ${fmtPx(price)}</div>` : `<div class="mi buy" data-ctx="ptp:${price}">Set take-profit @ ${fmtPx(price)}</div>`}`;
+}
 function showCtx(p, price) {
   const q = pt.quotes[pt.sym];
   const ba = bidAsk(q);
@@ -1321,7 +1410,8 @@ function showCtx(p, price) {
   const item = (side, type, ok) => `<div class="mi ${side}${ok ? '' : ' off'}" ${ok ? `data-ctx="${side}:${type}:${price}"` : ''}><b>${side === 'buy' ? 'Buy' : 'Sell'}</b> ${qty} ${esc(pt.sym)} @ ${fmtPx(price)} ${type}</div>`;
   const m = $('#ptCtx');
   m.innerHTML = (ask ? item('buy', 'limit', price < ask) + item('buy', 'stop', price > ask) + item('sell', 'limit', price > bid) + item('sell', 'stop', price < bid) : '<div class="mi off">No live price yet</div>') +
-    `<div class="msep"></div><div class="mi" data-ctx="ticket:${price}">Use ${fmtPx(price)} in the order ticket</div><div class="mi" data-ctx="hline:${price}">Draw horizontal line @ ${fmtPx(price)}</div>`;
+    `<div class="msep"></div><div class="mi" data-ctx="ticket:${price}">Use ${fmtPx(price)} in the order ticket</div><div class="mi" data-ctx="alert:${price}">🔔 Add alert @ ${fmtPx(price)}</div><div class="mi" data-ctx="hline:${price}">Draw horizontal line @ ${fmtPx(price)}</div>` +
+    positionCtx(price);
   m.classList.remove('hidden');
   const wrap = $('#ptChartWrap');
   m.style.left = `${Math.max(4, Math.min(p.x, wrap.clientWidth - m.offsetWidth - 8))}px`;
@@ -1335,6 +1425,17 @@ $('#ptCtx').addEventListener('click', async (e) => {
   if (parts[0] === 'hline') {
     pt.drawings.push({ t: 'h', p: +parts[1] });
     return saveDrawings();
+  }
+  if (['alert', 'psl', 'ptp'].includes(parts[0])) {
+    try {
+      const px = +parts[1];
+      const d = parts[0] === 'alert' ? await radar.paper.addAlert({ symbol: pt.sym, price: px }) : await radar.paper.protect(pt.sym, parts[0] === 'psl' ? { stopLoss: px } : { takeProfit: px });
+      applyPaper(d);
+      toast(parts[0] === 'alert' ? `Alert set: ${pt.sym} @ ${fmtPx(px)}` : `${parts[0] === 'psl' ? 'Stop-loss' : 'Take-profit'} set @ ${fmtPx(px)}`);
+    } catch (err) {
+      toast(errText(err), true);
+    }
+    return;
   }
   if (parts[0] === 'ticket') {
     setTicketType($('#ptType').value === 'market' ? 'limit' : $('#ptType').value);
@@ -1422,7 +1523,7 @@ function renderAcct() {
   $('#ptAcct').innerHTML = it('Equity', usd(a.equity)) + it('Open P&L', sgnUsd(a.unrealized), cls(a.unrealized)) +
     it('Total', `${sgnUsd(a.totalPnl)} (${pct(a.totalPct, 2)})`, cls(a.totalPnl)) + it('Buying power', usd(a.buyingPower), '', true);
   const n = (t, k) => `${t}${k ? `<span class="n">${k}</span>` : ''}`;
-  const labels = { pos: n('Positions', a.positions.length), ord: n('Orders', a.orders.length), hist: 'History', acct: 'Account' };
+  const labels = { pos: n('Positions', a.positions.length), ord: n('Orders', a.orders.length), hist: 'History', alerts: n('Alerts', pt.alerts.filter((x) => !x.firedAt).length), acct: 'Account' };
   $$('#ptTabs button').forEach((b) => (b.innerHTML = labels[b.dataset.t]));
 }
 
@@ -1432,7 +1533,11 @@ function renderTabs() {
   if (!a || pt.panelDown) return;
   $('#ptAcctTab').classList.toggle('hidden', pt.tab !== 'acct');
   $('#ptTabBody').classList.toggle('hidden', pt.tab === 'acct');
-  const bracketOf = (sym, role) => a.orders.find((o) => o.symbol === sym && o.role === role)?.price;
+  const bracketOf = (sym, role) => {
+    const o = a.orders.find((x) => x.symbol === sym && x.role === role);
+    return o ? `${fmtPx(o.price)}${o.trail ? ` <span class="muted small">trailing ${fmtPx(o.trail)}</span>` : ''}` : '';
+  };
+  const bulk = `<div class="pt-bulk">${a.positions.length ? '<button class="x" data-bulk="closeAll">Close all positions</button>' : ''}${a.orders.length ? '<button class="x" data-bulk="cancelAll">Cancel all orders</button>' : ''}</div>`;
   let html = '';
   if (pt.tab === 'pos') {
     html = a.positions.length ? `<table class="mini"><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Avg fill</th><th>Last</th><th>Market value</th><th>Unrealized P&L</th><th>Stop-loss</th><th>Take-profit</th><th></th></tr>
@@ -1441,16 +1546,16 @@ function renderTabs() {
         return `<tr class="clk" data-ptsym="${esc(p.symbol)}"><td><b>${esc(p.symbol)}</b>${p.note ? ` <span class="muted small">${esc(p.note)}</span>` : ''}</td>
         <td class="${p.qty > 0 ? 'up' : 'down'}">${p.qty > 0 ? 'Long' : 'Short'}</td><td>${Math.abs(p.qty)}</td><td>${fmtPx(p.avg)}</td><td>${fmtPx(pnl / p.qty + p.avg)}</td>
         <td>${usd(Math.abs(p.qty * (pnl / p.qty + p.avg)))}</td><td class="${cls(pnl)}">${sgnUsd(pnl)} (${pct((pnl / Math.abs(p.avg * p.qty)) * 100, 2)})</td>
-        <td>${bracketOf(p.symbol, 'stop') ? fmtPx(bracketOf(p.symbol, 'stop')) : '—'}</td><td>${bracketOf(p.symbol, 'target') ? fmtPx(bracketOf(p.symbol, 'target')) : '—'}</td>
-        <td><button class="x" data-ptclose="${esc(p.symbol)}">Close</button></td></tr>`;
-      }).join('')}</table>`
+        <td>${bracketOf(p.symbol, 'stop') || '—'}</td><td>${bracketOf(p.symbol, 'target') || '—'}</td>
+        <td><div class="pt-acts"><button class="x" data-pact="be:${esc(p.symbol)}" title="Move the stop-loss to your average price">Breakeven</button><button class="x" data-pact="trail:${esc(p.symbol)}" title="A stop-loss that follows the price">Trail</button><button class="x" data-pact="rev:${esc(p.symbol)}" title="Close and open the opposite position at market">Reverse</button><button class="x" data-ptclose="${esc(p.symbol)}">Close</button></div></td></tr>`;
+      }).join('')}</table>${bulk}`
       : '<div class="empty">No open positions. Use BUY / SELL on the chart, the order panel, or "Paper trade this" on a Trade idea.</div>';
   } else if (pt.tab === 'ord') {
     html = a.orders.length ? `<table class="mini"><tr><th>#</th><th>Symbol</th><th>Side</th><th>Type</th><th>Qty</th><th>Price</th><th>Role</th><th>Bracket</th><th>Placed</th><th></th></tr>
       ${a.orders.map((o) => `<tr class="clk" data-ptsym="${esc(o.symbol)}"><td>${o.id}</td><td><b>${esc(o.symbol)}</b></td><td class="${o.side === 'buy' ? 'up' : 'down'}">${o.side === 'buy' ? 'Buy' : 'Sell'}</td><td>${o.type}</td><td>${o.qty}</td>
         <td>${o.price ? fmtPx(o.price) : 'market'}</td><td>${{ entry: 'Entry', stop: 'Stop-loss', target: 'Take-profit' }[o.role]}</td>
         <td>${o.stopLoss || o.takeProfit ? `${o.stopLoss ? `SL ${fmtPx(o.stopLoss)}` : ''} ${o.takeProfit ? `TP ${fmtPx(o.takeProfit)}` : ''}` : '—'}</td>
-        <td>${when(o.createdAt)}</td><td><button class="x" data-ptcancel="${o.id}">Cancel</button></td></tr>`).join('')}</table>`
+        <td>${when(o.createdAt)}</td><td><button class="x" data-ptcancel="${o.id}">Cancel</button></td></tr>`).join('')}</table>${bulk}`
       : '<div class="empty">No working orders. Right-click the chart to place a limit or stop at a price.</div>';
   } else if (pt.tab === 'hist') {
     html = a.fills.length ? `<table class="mini"><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Fill price</th><th>Kind</th><th>Realized P&L</th></tr>
@@ -1458,11 +1563,27 @@ function renderTabs() {
         <td class="${f.side === 'buy' ? 'up' : 'down'}">${f.side === 'buy' ? 'Buy' : 'Sell'}</td><td>${f.qty}</td><td>${fmtPx(f.price)}</td><td>${{ entry: 'Entry', stop: 'Stop-loss hit', target: 'Take-profit hit' }[f.role] || f.role}</td>
         <td class="${cls(f.pnl)}">${f.pnl != null ? sgnUsd(f.pnl) : '—'}</td></tr>`).join('')}</table>`
       : '<div class="empty">No fills yet.</div>';
+  } else if (pt.tab === 'alerts') {
+    const act = pt.alerts.filter((x) => !x.firedAt);
+    const fired = pt.alerts.filter((x) => x.firedAt).sort((x, y) => y.firedAt - x.firedAt);
+    html = `<div class="pt-alertform">Alert me when <b>${esc(pt.sym)}</b> reaches <input id="ptAlertPx" type="number" step="0.01" min="0" placeholder="Price"> <input id="ptAlertNote" class="note" maxlength="120" placeholder="Note (optional)"> <button class="x" data-alertadd="1">Add alert</button>
+      <span class="muted small">You get a desktop notification, even when this page isn't open. Tip: right-click the chart, or press Alt+A over it.</span></div>` +
+      (act.length ? `<table class="mini"><tr><th>Symbol</th><th>When price goes</th><th>Level</th><th>Note</th><th>Set</th><th></th></tr>
+      ${act.map((x) => `<tr class="clk" data-ptsym="${esc(x.symbol)}"><td><b>${esc(x.symbol)}</b></td><td>${x.dir === 'above' ? 'above ↑' : 'below ↓'}</td><td>${fmtPx(x.price)}</td><td>${esc(x.note || '')}</td><td>${when(x.createdAt)}</td><td><button class="x" data-alertdel="${x.id}">Delete</button></td></tr>`).join('')}</table>` : '<div class="empty">No active alerts.</div>') +
+      (fired.length ? `<div class="pt-bulk"><span class="muted small" style="margin-right:auto">Triggered</span><button class="x" data-alertclear="1">Clear triggered</button></div><table class="mini">
+      ${fired.map((x) => `<tr class="clk" data-ptsym="${esc(x.symbol)}"><td><b>${esc(x.symbol)}</b></td><td>${x.dir === 'above' ? 'rose above' : 'fell below'} ${fmtPx(x.price)}</td><td>at ${fmtPx(x.firedPrice)}</td><td>${esc(x.note || '')}</td><td>${when(x.firedAt)}</td><td><button class="x" data-alertdel="${x.id}">Delete</button></td></tr>`).join('')}</table>` : '');
   } else if (pt.tab === 'acct') {
     renderAcctTab();
     return;
   }
-  if ($('#ptTabBody').innerHTML !== html) $('#ptTabBody').innerHTML = html;
+  if ($('#ptTabBody').innerHTML === html) return;
+  // Keep what's typed in the alert form when the list redraws.
+  const keep = ['#ptAlertPx', '#ptAlertNote'].map((id) => [id, $(id)?.value, document.activeElement === $(id)]);
+  $('#ptTabBody').innerHTML = html;
+  for (const [id, v, focused] of keep) {
+    if ($(id) && v) $(id).value = v;
+    if (focused) $(id)?.focus();
+  }
 }
 function renderAcctTab() {
   const a = pt.acct;
@@ -1479,11 +1600,12 @@ function renderAcctTab() {
   }
   if (!pt.eqChart && LWC) {
     pt.eqChart = LWC.createChart($('#ptEqChart'), {
-      autoSize: true, layout: { background: { color: TV.bg }, textColor: '#b2b5be', fontSize: 11 },
-      grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(42,46,57,0.55)' } },
+      ...chartColors(),
+      autoSize: true,
+      grid: { vertLines: { visible: false }, horzLines: { color: alpha(TV.line, 0.55) } },
       timeScale: { timeVisible: true, borderColor: TV.line }, rightPriceScale: { borderColor: TV.line },
     });
-    pt.eqLine = pt.eqChart.addAreaSeries({ lineColor: TV.blue, topColor: 'rgba(41,98,255,0.28)', bottomColor: 'rgba(41,98,255,0)', lineWidth: 2 });
+    pt.eqLine = pt.eqChart.addAreaSeries({ lineColor: TV.blue, topColor: alpha(TV.blue, 0.28), bottomColor: alpha(TV.blue, 0), lineWidth: 2 });
   }
   if (pt.eqLine) {
     const pts = [];
@@ -1538,6 +1660,38 @@ $('#ptResize').addEventListener('mousedown', (e) => {
 });
 
 // ---- order panel ----
+// Size by shares, by a dollar amount, or by how much equity is lost if the stop-loss is hit.
+function applySizing(px) {
+  const mode = pt.sizeMode;
+  $$('#ptSizeMode button').forEach((b) => b.classList.toggle('on', b.dataset.m === mode));
+  $('#ptSizeValRow').classList.toggle('hidden', mode === 'sh');
+  $('#ptSizeValLbl').textContent = mode === 'usd' ? 'Dollars to invest' : 'Risk (% of equity)';
+  $('#ptQty').readOnly = mode !== 'sh';
+  if (mode !== 'sh' && $('#ptSizeVal').value === '') $('#ptSizeVal').value = mode === 'usd' ? 1000 : settingsCache?.riskPct || 1;
+  const v = +$('#ptSizeVal').value || 0;
+  let note = '';
+  if (mode === 'usd') {
+    if (px) $('#ptQty').value = Math.max(0, Math.floor(v / px));
+  } else if (mode === 'risk') {
+    const sl = $('#ptUseSL').checked ? +$('#ptSL').value : 0;
+    const eq = pt.acct?.equity || 0;
+    if (!sl) note = 'Turn on a stop-loss: the share count comes from the distance to it.';
+    else if (px && Math.abs(px - sl) > 0) {
+      $('#ptQty').value = Math.max(0, Math.floor((eq * v) / 100 / Math.abs(px - sl)));
+      note = `Loses about ${usd((eq * v) / 100)} (${v}% of ${usd(eq)}) if the stop-loss is hit.`;
+    }
+  }
+  $('#ptSizeNote').textContent = note;
+  $('#ptSizeNote').classList.toggle('hidden', !note);
+  return Math.floor(+$('#ptQty').value || 0);
+}
+function setSizeMode(mode) {
+  pt.sizeMode = mode;
+  store.set('pt.sizeMode', mode);
+  $('#ptSizeVal').value = '';
+  syncTicket();
+}
+
 function setTicketType(type) {
   $('#ptType').value = type;
   syncTicket();
@@ -1552,12 +1706,14 @@ function syncTicket() {
   $('#ptTicketSym').textContent = pt.sym;
   const btn = $('#ptSubmit');
   btn.className = `btn pt-submit ${pt.side}`;
-  const qty = Math.floor(+$('#ptQty').value || 0);
   const q = pt.quotes[pt.sym];
   const ba = bidAsk(q);
   // While closed, a market order fills at the open, so estimate with the pre/after-market price.
   const live = (pt.side === 'buy' ? ba?.ask : ba?.bid) || q?.last;
   const px = type === 'market' ? (!pt.acct?.marketOpen && q?.ext?.last) || live : +$('#ptPrice').value;
+  pt.ticketPx = px || null;
+  const qty = applySizing(px);
+  $('#ptRChips').classList.toggle('hidden', !($('#ptUseTP').checked && $('#ptUseSL').checked && +$('#ptSL').value));
   btn.textContent = `${pt.side === 'buy' ? 'Buy' : 'Sell'} ${qty || ''} ${pt.sym} ${type === 'market' ? 'at market' : `${type} ${px ? fmtPx(px) : ''}`}`;
   let est = '';
   if (px && qty) {
@@ -1605,6 +1761,7 @@ function applyPaper(d) {
   pt.acct = d.account || pt.acct;
   if (d.quotes) pt.quotes = { ...pt.quotes, ...d.quotes };
   if (d.feed) pt.feed = d.feed;
+  if (d.alerts) pt.alerts = d.alerts;
   if (!paperVisible()) return;
   renderAcct();
   renderQuoteHead();
@@ -1643,7 +1800,10 @@ function openPaper(prefill = {}) {
   pt.side = prefill.side || 'buy';
   $('#ptType').value = prefill.type || 'market';
   if (prefill.price) $('#ptPrice').value = prefill.price.toFixed(2);
-  if (prefill.qty) $('#ptQty').value = prefill.qty;
+  if (prefill.qty) {
+    pt.sizeMode = 'sh';
+    $('#ptQty').value = prefill.qty;
+  }
   $('#ptUseSL').checked = !!prefill.stopLoss;
   $('#ptSL').value = prefill.stopLoss ? prefill.stopLoss.toFixed(2) : '';
   $('#ptUseTP').checked = !!prefill.takeProfit;
@@ -1701,18 +1861,17 @@ function makeMini(i) {
   const el = document.createElement('div');
   el.className = 'tv-mini';
   el.innerHTML = '<div class="mini-chart"></div><div class="mini-head"></div><div class="mini-msg hidden"></div>';
-  const grid = 'rgba(42,46,57,0.55)';
+  const base = chartColors(10);
   const chart = LWC.createChart($('.mini-chart', el), {
+    ...base,
     autoSize: true,
-    layout: { background: { color: TV.bg }, textColor: '#b2b5be', fontSize: 10 },
-    grid: { vertLines: { color: grid }, horzLines: { color: grid } },
-    timeScale: { timeVisible: true, secondsVisible: false, borderColor: TV.line, rightOffset: 6 },
-    rightPriceScale: { borderColor: TV.line, scaleMargins: { top: 0.15, bottom: 0.08 } },
-    crosshair: { mode: LWC.CrosshairMode.Normal },
+    timeScale: { ...base.timeScale, timeVisible: true, secondsVisible: false, rightOffset: 6 },
+    rightPriceScale: { ...base.rightPriceScale, scaleMargins: { top: 0.15, bottom: 0.08 } },
+    crosshair: { ...base.crosshair, mode: LWC.CrosshairMode.Normal },
   });
   const vol = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false });
   vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-  const series = chart.addCandlestickSeries({ upColor: TV.up, downColor: TV.down, borderVisible: false, wickUpColor: TV.up, wickDownColor: TV.down, priceLineColor: '#5d606b', priceLineStyle: 2 });
+  const series = chart.addCandlestickSeries({ ...candleColors(), priceLineColor: TV.muted, priceLineStyle: 2 });
   const m = { i, el, chart, series, vol, sym: null, tf: null, bars: [], loading: 0, lines: [], lineSig: '' };
   el.addEventListener('mousedown', () => selectSlot(m.i));
   return m;
@@ -1750,6 +1909,7 @@ async function loadMini(m, sym, tf) {
     m.bars = bars;
     m.series.setData(bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
     m.vol.setData(bars.map(volPoint));
+    m.series.priceScale().applyOptions({ autoScale: true });
     m.chart.timeScale().fitContent();
     if (bars.length > 120) m.chart.timeScale().setVisibleLogicalRange({ from: bars.length - 120, to: bars.length + 6 });
     miniMsg(m, '');
@@ -1795,12 +1955,13 @@ function miniLines(m, clear = false) {
       else if (o.role === 'target') defs.push({ price: o.price, color: TV.up, title: `TP ${o.qty}` });
       else if (o.type !== 'market') defs.push({ price: o.price, color: o.side === 'buy' ? TV.blue : TV.down, title: `${o.side === 'buy' ? 'BUY' : 'SELL'} ${o.type === 'limit' ? 'LMT' : 'STP'} ${o.qty}` });
     }
+    for (const al of pt.alerts.filter((x) => x.symbol === m.sym && !x.firedAt)) defs.push({ price: al.price, color: TV.warn, title: 'ALERT', dashed: true });
   }
   const sig = JSON.stringify(defs);
   if (sig === m.lineSig) return;
   m.lineSig = sig;
   for (const l of m.lines) m.series.removePriceLine(l);
-  m.lines = defs.map((d) => m.series.createPriceLine({ price: d.price, color: d.color, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: d.title }));
+  m.lines = defs.map((d) => m.series.createPriceLine({ price: d.price, color: d.color, lineWidth: 1, lineStyle: d.dashed ? 2 : 0, axisLabelVisible: true, title: d.title }));
 }
 
 // Lay out the grid: the full chart sits in the selected slot, mini charts in the rest.
@@ -1852,6 +2013,27 @@ $('#ptLayout').addEventListener('click', (e) => {
   buildGrid();
   radar.paper.watch(paperSyms()).then(applyPaper);
 });
+
+// Re-color every chart after a theme change.
+function rethemeCharts() {
+  if (pt.chart) {
+    pt.chart.applyOptions(chartColors());
+    makeMainSeries(); // new colors for candles, volume, order lines and drawings
+  }
+  for (const m of pt.minis) {
+    if (!m) continue;
+    m.chart.applyOptions(chartColors(10));
+    m.series.applyOptions({ ...candleColors(), priceLineColor: TV.muted });
+    m.vol.setData(m.bars.map(volPoint));
+    m.lineSig = '';
+    miniLines(m);
+  }
+  if (pt.eqChart) {
+    pt.eqChart.applyOptions({ ...chartColors(), grid: { vertLines: { visible: false }, horzLines: { color: alpha(TV.line, 0.55) } } });
+    pt.eqLine.applyOptions({ lineColor: TV.blue, topColor: alpha(TV.blue, 0.28), bottomColor: alpha(TV.blue, 0) });
+  }
+  pt.canvasSig = '';
+}
 
 // ---- top toolbar ----
 let ptSugg = [];
@@ -1978,7 +2160,9 @@ $('.pt-side').addEventListener('click', (e) => {
     const q = pt.quotes[pt.sym];
     const ref = $('#ptType').value === 'market' ? q?.last : +$('#ptPrice').value;
     const dir = (pt.side === 'buy' ? 1 : -1) * (id === '#ptUseSL' ? -1 : 1);
-    if (ref) $(box).value = fmtPx(ref * (1 + dir * 0.02));
+    const sl = $('#ptUseSL').checked ? +$('#ptSL').value : 0;
+    if (ref && id === '#ptUseTP' && sl) $(box).value = fmtPx(ref + dir * 2 * Math.abs(ref - sl)); // 2 : 1 reward to risk
+    else if (ref) $(box).value = fmtPx(ref * (1 + dir * 0.02));
   }
   syncTicket();
 }));
@@ -2046,6 +2230,196 @@ if (store.get('pt.panelH', 0)) $('#ptBottom').style.height = `${store.get('pt.pa
 
 radar.paper.onUpdate(applyPaper);
 radar.paper.onTick(applyTick);
+
+// ---- trading helpers: sizing, R targets, position actions, alerts, shortcuts ----
+$('#ptSizeMode').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b) setSizeMode(b.dataset.m);
+});
+$('#ptSizeVal').addEventListener('input', syncTicket);
+$('#ptQtyChips').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b || !pt.ticketPx || !pt.acct) return;
+  pt.sizeMode = 'sh';
+  store.set('pt.sizeMode', 'sh');
+  $('#ptQty').value = Math.max(1, Math.floor((pt.acct.buyingPower * +b.dataset.qp) / pt.ticketPx));
+  syncTicket();
+});
+$('#ptRChips').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  const sl = +$('#ptSL').value;
+  if (!b || !pt.ticketPx || !sl) return;
+  const dir = pt.side === 'buy' ? 1 : -1;
+  setTicket('#ptTP', pt.ticketPx + dir * +b.dataset.r * Math.abs(pt.ticketPx - sl));
+});
+
+// A small menu at the mouse (used for the trailing-stop distances).
+function popMenu(x, y, items) {
+  $('#popMenu')?.remove();
+  const m = document.createElement('div');
+  m.id = 'popMenu';
+  m.className = 'tv-menu pop-menu';
+  m.innerHTML = items.map((it, i) => `<div class="mi" data-i="${i}">${it.label}</div>`).join('');
+  document.body.append(m);
+  m.style.left = `${Math.min(x, innerWidth - m.offsetWidth - 8)}px`;
+  m.style.top = `${Math.min(y, innerHeight - m.offsetHeight - 8)}px`;
+  m.addEventListener('click', (e) => {
+    const it = items[e.target.closest('[data-i]')?.dataset.i];
+    m.remove();
+    it?.run();
+  });
+  setTimeout(() => document.addEventListener('mousedown', function off(e) {
+    if (!m.contains(e.target)) m.remove();
+    document.removeEventListener('mousedown', off);
+  }), 0);
+}
+
+async function paperAct(fn, ok) {
+  try {
+    applyPaper(await fn());
+    if (ok) toast(ok);
+  } catch (err) {
+    toast(errText(err), true);
+  }
+}
+
+$('#ptTabBody').addEventListener('click', async (e) => {
+  const act = e.target.closest('[data-pact]');
+  const bulk = e.target.closest('[data-bulk]');
+  const add = e.target.closest('[data-alertadd]');
+  const del = e.target.closest('[data-alertdel]');
+  const clear = e.target.closest('[data-alertclear]');
+  if (act || bulk || add || del || clear) e.stopPropagation();
+  if (act) {
+    const [kind, sym] = act.dataset.pact.split(':');
+    if (kind === 'be') return paperAct(() => radar.paper.breakeven(sym), `${sym}: stop-loss moved to breakeven`);
+    if (kind === 'rev') {
+      if (!confirm(`Reverse ${sym}? This closes the position and opens the opposite one at market.`)) return;
+      return paperAct(() => radar.paper.reverse(sym), `${sym} reversed`);
+    }
+    if (kind === 'trail') {
+      const last = pt.quotes[sym]?.last || pt.acct?.positions.find((p) => p.symbol === sym)?.last;
+      if (!last) return toast('No live price yet', true);
+      const r = act.getBoundingClientRect();
+      return popMenu(r.left, r.bottom + 4, [0.5, 1, 2, 3, 5].map((pc) => {
+        const amt = +((last * pc) / 100).toFixed(2);
+        return { label: `Trail ${pc}% behind ($${amt.toFixed(2)})`, run: () => paperAct(() => radar.paper.trail(sym, amt), `${sym}: trailing stop ${pc}% behind the price`) };
+      }));
+    }
+  }
+  if (bulk) {
+    if (bulk.dataset.bulk === 'closeAll' && confirm('Close every open position at market?')) return paperAct(() => radar.paper.closeAll(), 'All positions closed');
+    if (bulk.dataset.bulk === 'cancelAll' && confirm('Cancel every working order, including stop-losses and take-profits?')) return paperAct(() => radar.paper.cancelAll(), 'All orders cancelled');
+    return;
+  }
+  if (add) {
+    const px = +$('#ptAlertPx').value;
+    return paperAct(() => radar.paper.addAlert({ symbol: pt.sym, price: px, note: $('#ptAlertNote').value }), `Alert set: ${pt.sym} @ ${fmtPx(px)}`);
+  }
+  if (del) return paperAct(() => radar.paper.removeAlert(+del.dataset.alertdel));
+  if (clear) return paperAct(() => radar.paper.clearFiredAlerts());
+});
+$('#ptTabBody').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.closest('.pt-alertform')) $('[data-alertadd]').click();
+});
+
+// An alert went off (the desktop notification comes from the main process).
+function beep() {
+  try {
+    const ctx = new AudioContext();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.15, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    o.connect(g).connect(ctx.destination);
+    o.start();
+    o.stop(ctx.currentTime + 0.4);
+  } catch {}
+}
+radar.paper.onAlert((a) => {
+  beep();
+  if (paperVisible()) toast(`🔔 ${a.symbol} ${a.dir === 'above' ? 'rose above' : 'fell below'} ${fmtPx(a.price)} (now ${fmtPx(a.firedPrice)})`);
+});
+
+// Keyboard shortcuts on the paper-trading page (never while typing in a field).
+const KEYS = [
+  ['Shift+B', 'Buy with the order ticket (shares, type, stop-loss, take-profit)'],
+  ['Shift+S', 'Sell / short with the order ticket'],
+  ['Shift+C', 'Close the position in this chart'],
+  ['Shift+E', 'Move this position\'s stop-loss to breakeven'],
+  ['Alt+A', 'Add a price alert where the mouse is (or at the last price)'],
+  ['Alt+H', 'Horizontal line tool'],
+  ['Alt+T', 'Trend line tool'],
+  ['Alt+R', 'Reset the chart view'],
+  ['1 – 6', 'Timeframe: 1m, 5m, 15m, 1h, 1D, 1W'],
+  ['Esc', 'Cancel the drawing tool, close menus'],
+  ['?', 'Show or hide this list'],
+];
+function toggleKeys(show = $('#ptKeys').classList.contains('hidden')) {
+  $('#ptKeys').innerHTML = `<h4>Keyboard shortcuts</h4><table>${KEYS.map(([k, d]) => `<tr><td>${k.split('+').map((x) => `<kbd>${esc(x)}</kbd>`).join(' + ')}</td><td>${esc(d)}</td></tr>`).join('')}</table>`;
+  $('#ptKeys').classList.toggle('hidden', !show);
+}
+$('#ptKeysBtn').addEventListener('click', () => toggleKeys());
+$('#ptKeys').addEventListener('click', () => toggleKeys(false));
+document.addEventListener('keydown', (e) => {
+  if (!paperVisible() || e.metaKey || e.ctrlKey) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = e.code;
+  const hasPos = () => pt.acct?.positions.some((p) => p.symbol === pt.sym);
+  let done = true;
+  if (e.shiftKey && !e.altKey && (k === 'KeyB' || k === 'KeyS')) {
+    pt.side = k === 'KeyB' ? 'buy' : 'sell';
+    syncTicket();
+    $('#ptSubmit').click();
+  } else if (e.shiftKey && !e.altKey && k === 'KeyC') {
+    if (hasPos()) paperAct(() => radar.paper.close(pt.sym), `${pt.sym} closed`);
+    else toast(`No ${pt.sym} position`, true);
+  } else if (e.shiftKey && !e.altKey && k === 'KeyE') {
+    if (hasPos()) paperAct(() => radar.paper.breakeven(pt.sym), `${pt.sym}: stop-loss at breakeven`);
+    else toast(`No ${pt.sym} position`, true);
+  } else if (e.altKey && k === 'KeyA') {
+    const px = roundPx(pt.hoverPrice || pt.quotes[pt.sym]?.last || 0);
+    if (px > 0) paperAct(() => radar.paper.addAlert({ symbol: pt.sym, price: px }), `Alert set: ${pt.sym} @ ${fmtPx(px)}`);
+  } else if (e.altKey && k === 'KeyH') setTool('hline');
+  else if (e.altKey && k === 'KeyT') setTool('trend');
+  else if (e.altKey && k === 'KeyR') resetView();
+  else if (!e.altKey && !e.shiftKey && /^Digit[1-6]$/.test(k)) $$('#ptTf button')[+k.slice(5) - 1]?.click();
+  else if (e.key === '?') toggleKeys();
+  else if (e.key === 'Escape') {
+    toggleKeys(false);
+    $('#popMenu')?.remove();
+    done = false; // the older Escape handler also runs
+  } else done = false;
+  if (done) e.preventDefault();
+});
+
+// ---------- appearance (themes) ----------
+function renderAppearance() {
+  const t = themePrefs();
+  $('#themeBase').innerHTML = Object.entries(THEMES).map(([k, th]) => `<button type="button" class="theme-tile${k === t.base ? ' on' : ''}" data-theme="${k}" style="--a:${th.app[0]};--b:${th.tv[1]};--c:${th.app[4]}"><span class="sw"><i></i><i style="background:${t.accent}"></i></span>${esc(th.name)}</button>`).join('');
+  $('#themeAccent').innerHTML = Object.entries(ACCENTS).map(([k, c]) => `<button type="button" class="accent-dot${c === t.accent ? ' on' : ''}" data-accent="${c}" title="${k}" style="background:${c}"></button>`).join('') +
+    `<label class="accent-custom" title="Pick any color"><input type="color" id="themeCustom" value="${t.accent}" /> Custom</label>`;
+  $('#themeCandles').innerHTML = Object.entries(CANDLES).map(([k, c]) => `<button type="button" class="candle-opt${k === t.candles ? ' on' : ''}" data-candles="${k}"><i style="background:${c.up}"></i><i style="background:${c.down}"></i>${esc(c.name)}</button>`).join('');
+}
+function setTheme(change) {
+  const next = { ...themePrefs(), ...change };
+  try {
+    localStorage.setItem('mr.theme', JSON.stringify(next));
+  } catch {}
+  applyTheme(next);
+  renderAppearance();
+}
+$('#appearance').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-theme],[data-accent],[data-candles],#themeReset');
+  if (!b) return;
+  if (b.id === 'themeReset') return setTheme({ base: 'midnight', accent: ACCENTS.blue, candles: 'classic' });
+  if (b.dataset.theme) setTheme({ base: b.dataset.theme });
+  else if (b.dataset.accent) setTheme({ accent: b.dataset.accent });
+  else setTheme({ candles: b.dataset.candles });
+});
+$('#appearance').addEventListener('change', (e) => e.target.id === 'themeCustom' && setTheme({ accent: e.target.value }));
+renderAppearance();
 
 // ---------- licensed data (Polygon) ----------
 function polyStatus(s) {

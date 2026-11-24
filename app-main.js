@@ -13,6 +13,7 @@ const { setDataConfig } = require('./engine/config');
 const polygon = require('./engine/polygon');
 const { Account } = require('./engine/account');
 const { YahooStream } = require('./engine/stream');
+const { Alerts } = require('./engine/alerts');
 
 const DEFAULTS = {
   watchlist: ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'AMD', 'GOOGL'],
@@ -64,6 +65,7 @@ let scanning = false;
 let timer = null;
 let trackCache = { at: 0, data: null };
 let paper;
+let alerts;
 let account;
 let paperWatch = []; // symbols the paper-trading screen is showing
 let lastQuotes = {};
@@ -73,7 +75,7 @@ const send = (ch, d) => {
   if (win && !win.isDestroyed()) win.webContents.send(ch, d);
 };
 const feed = () => ({ mode: stream.healthy() ? 'stream' : 'poll', connected: stream.connected, lastTickAt: stream.lastTickAt || null });
-const snapshot = () => ({ account: paper.summary(), quotes: lastQuotes, feed: feed() });
+const snapshot = () => ({ account: paper.summary(), quotes: lastQuotes, feed: feed(), alerts: alerts.list() });
 
 // Account updates go out at most once a second (P&L moves with every tick), right away on a fill.
 let summaryTimer = null;
@@ -101,8 +103,23 @@ function queueTick(sym) {
   }
 }
 
+const liveSymbols = () => [...new Set([...paper.symbols(), ...alerts.symbols(), ...paperWatch])];
 function streamSymbols() {
-  stream.setSymbols([...new Set([...paper.symbols(), ...paperWatch])].slice(0, 80));
+  stream.setSymbols(liveSymbols().slice(0, 80));
+}
+
+// Price alerts: desktop notification + a message to the window.
+function checkAlerts(qs) {
+  const fired = alerts.check(qs);
+  if (!fired.length) return;
+  for (const a of fired) {
+    if (Notification.isSupported()) {
+      new Notification({ title: `${a.symbol} ${a.dir === 'above' ? 'rose above' : 'fell below'} ${a.price}`, body: `Now ${a.firedPrice.toFixed(2)}${a.note ? ` · ${a.note}` : ''}` }).show();
+    }
+    send('alerts:fired', a);
+  }
+  streamSymbols();
+  pushUpdate(true);
 }
 
 // Live tick from the Yahoo stream → quote → order matching → UI.
@@ -122,6 +139,7 @@ stream.on('tick', (t) => {
     if (!q.last) q.last = t.price;
   }
   lastQuotes[t.symbol] = q;
+  checkAlerts({ [t.symbol]: q });
   const fills = paper.s.fills.length;
   paper.tick({ [t.symbol]: q });
   queueTick(t.symbol);
@@ -147,10 +165,11 @@ async function paperLoop() {
   const streaming = stream.healthy();
   try {
     streamSymbols();
-    const syms = [...new Set([...paper.symbols(), ...paperWatch])];
+    const syms = liveSymbols();
     if (syms.length) {
       mergePolled(await quotes(syms));
       paper.tick(lastQuotes);
+      checkAlerts(lastQuotes);
     } else paper.tick({});
     pushUpdate(true);
   } catch {}
@@ -307,6 +326,15 @@ function start(launcher) {
   ipcMain.handle('paper:modify', (_e, id, changes) => paperDo(() => paper.modify(Number(id), changes || {})));
   ipcMain.handle('paper:close', (_e, sym) => paperDo(() => paper.close(sym)));
   ipcMain.handle('paper:bracket', (_e, sym, b) => paperDo(() => paper.modifyBracket(sym, b)));
+  ipcMain.handle('paper:protect', (_e, sym, b) => paperDo(() => paper.protect(String(sym), b || {})));
+  ipcMain.handle('paper:breakeven', (_e, sym) => paperDo(() => paper.breakeven(String(sym))));
+  ipcMain.handle('paper:trail', (_e, sym, amount) => paperDo(() => paper.trail(String(sym), Number(amount))));
+  ipcMain.handle('paper:reverse', (_e, sym) => paperDo(() => paper.reverse(String(sym))));
+  ipcMain.handle('paper:closeAll', () => paperDo(() => paper.closeAll()));
+  ipcMain.handle('paper:cancelAll', () => paperDo(() => paper.cancelAll()));
+  ipcMain.handle('alerts:add', (_e, a) => paperDo(() => alerts.add({ ...a, last: lastQuotes[String(a?.symbol || '').toUpperCase()]?.last })));
+  ipcMain.handle('alerts:remove', (_e, id) => paperDo(() => alerts.remove(Number(id))));
+  ipcMain.handle('alerts:clearFired', () => paperDo(() => alerts.clearFired()));
   ipcMain.handle('paper:reset', (_e, cash) => paperDo(() => paper.reset(Number(cash) || settings.accountSize || 10000)));
   ipcMain.handle('account:status', () => account.status());
   ipcMain.handle('account:signin', (_e, email, password) => account.auth('signin', String(email || '').trim(), String(password || '')));
@@ -329,6 +357,7 @@ function start(launcher) {
   account = new Account(path.join(dataDir(), 'account.bin'), safeStorage);
   account.refreshPlan().catch(() => {});
   paper = new PaperAccount(path.join(dataDir(), 'paper-account.json'), settings.accountSize || 10000);
+  alerts = new Alerts(path.join(dataDir(), 'alerts.json'));
   createWindow(launcher);
   schedule();
   paperLoop();

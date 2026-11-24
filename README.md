@@ -13,6 +13,10 @@ A desktop app for Mac and Windows (64-bit). It reads about 3,000 headlines from 
 
 **Paper trading:** practice with fake money on live, streaming prices, in a TradingView-style workspace: candles, bars or line (1m to 1W, including pre- and after-market), VWAP / EMA 9 / EMA 21 / SMA 50 / SMA 200 / volume, horizontal and trend lines, 1, 2 or 4 charts at once (click a chart to trade it), a watchlist with live prices, and floating BUY / SELL buttons showing the bid, ask and spread. Orders, stop-losses and take-profits appear as lines on the chart that you can drag to move or × to cancel; right-click the chart to place a limit or stop at that price. Fills are realistic: buys pay the ask, sells get the bid. The Paper Trading panel underneath has positions, orders, history and an account page with an equity curve. Every Trade idea has a **Paper trade this** button that fills in the ticket for you.
 
+**Trading tools:** size orders by shares, dollars, or the % of your equity you'd lose at the stop-loss; set take-profits at 1R–3R in one click; Breakeven, Trailing stop (0.5–5%), Reverse and Close on every position, plus Close all / Cancel all; right-click the chart to set an alert, stop-loss or take-profit at that price; price alerts with desktop notifications (they work even when the paper page isn't open); keyboard shortcuts (press **?** on the paper page).
+
+**Themes:** Settings → Appearance has 7 color themes (including Light), any accent color, and candle colors (including a color-blind-friendly blue/orange).
+
 **Track record:** every scan's signals are logged and checked 1, 5 and 20 trading days later, so you can see how often the calls were actually right.
 
 It also has a live **news feed**, an **economic calendar** for forex and macro news (CPI, jobs, FOMC… with plain-English explanations), an **earnings calendar**, and a **research guide** that explains every rule the app uses ([RESEARCH.md](RESEARCH.md)).
@@ -89,6 +93,7 @@ Code layout:
 - `engine/polygon.js`, `engine/config.js`: licensed data provider and data settings
 - `engine/account.js`: sign-in and plan status (Supabase + the cloud backend)
 - `engine/paper.js`: paper-trading account (orders, bid/ask fills, brackets, modify); tests in `scripts/test-paper.js`
+- `engine/alerts.js`: price alerts (saved to disk, checked on every live quote)
 - `engine/stream.js`: live prices from Yahoo Finance's streaming websocket (hand-written websocket + protobuf decoder, no dependencies); tests in `scripts/test-stream.js`
 - `engine/quotes.js`: CNBC quotes (fallback when the stream is down) and chart candles
 - `renderer/vendor/`: TradingView Lightweight Charts 4.2.3 (Apache-2.0)

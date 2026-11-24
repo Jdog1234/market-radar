@@ -141,6 +141,8 @@
           <button id="ptIndBtn" class="tv-btn">ƒx Indicators ▾</button>
           <div id="ptIndMenu" class="tv-menu hidden"></div>
         </div>
+        <div class="tv-sep"></div>
+        <button class="tv-btn" id="ptKeysBtn" title="Keyboard shortcuts (press ?)">?</button>
         <div class="tv-spacer"></div>
         <div id="ptFeed" class="tv-feed"></div>
         <div id="ptMkt" class="tv-feed"></div>
@@ -167,6 +169,7 @@
             </div>
             <div id="ptCtx" class="tv-menu tv-ctx hidden"></div>
             <div id="ptToast" class="tv-toast hidden"></div>
+            <div id="ptKeys" class="tv-keys hidden"></div>
           </div>
           </div>
           <div class="tv-bottom" id="ptBottom">
@@ -175,7 +178,7 @@
               <b class="tv-btitle">Paper Trading</b>
               <div class="tv-tabs" id="ptTabs">
                 <button data-t="pos" class="on">Positions</button><button data-t="ord">Orders</button>
-                <button data-t="hist">History</button><button data-t="acct">Account</button>
+                <button data-t="hist">History</button><button data-t="alerts">Alerts</button><button data-t="acct">Account</button>
               </div>
               <div id="ptAcct" class="tv-acct"></div>
               <button class="tv-btn tv-collapse" id="ptCollapse" title="Collapse / expand">▾</button>
@@ -203,12 +206,19 @@
             </div>
             <select id="ptType" class="hidden"><option value="market">Market</option><option value="limit">Limit</option><option value="stop">Stop</option></select>
             <label id="ptPriceRow" class="hidden">Price <input id="ptPrice" type="number" step="0.01" min="0" /></label>
+            <div class="pt-sizehead">Size by
+              <div class="pt-chips" id="ptSizeMode"><button data-m="sh" class="on" title="Type the number of shares">Shares</button><button data-m="usd" title="Type a dollar amount to invest">Dollars</button><button data-m="risk" title="Type how much of your equity to risk if the stop-loss is hit">Risk %</button></div>
+            </div>
+            <label id="ptSizeValRow" class="hidden"><span id="ptSizeValLbl">Dollars</span> <input id="ptSizeVal" type="number" min="0" step="any" /></label>
             <label>Shares <input id="ptQty" type="number" min="1" step="1" value="10" /></label>
+            <div class="pt-chips" id="ptQtyChips" title="Share count from your buying power"><button data-qp="0.1">10%</button><button data-qp="0.25">25%</button><button data-qp="0.5">50%</button><button data-qp="1">Max</button></div>
+            <div id="ptSizeNote" class="muted small hidden"></div>
             <div class="tv-brk">
               <label class="check"><input type="checkbox" id="ptUseSL" /> Stop-loss</label>
               <input id="ptSL" type="number" step="0.01" min="0" class="hidden" placeholder="Stop-loss price" />
               <label class="check"><input type="checkbox" id="ptUseTP" /> Take-profit</label>
               <input id="ptTP" type="number" step="0.01" min="0" class="hidden" placeholder="Take-profit price" />
+              <div class="pt-chips hidden" id="ptRChips" title="Take-profit at a multiple of the stop-loss distance">Target <button data-r="1">1R</button><button data-r="1.5">1.5R</button><button data-r="2">2R</button><button data-r="3">3R</button></div>
             </div>
             <div id="ptEst" class="pt-est"></div>
             <button class="btn pt-submit" id="ptSubmit">Place order</button>
@@ -249,6 +259,17 @@
         <label class="check"><input type="checkbox" name="notify" /> Desktop notification for new high-confidence signals</label>
         <div><button class="btn" type="submit">Save</button> <span id="saved" class="muted small"></span></div>
       </form>
+      <div class="card about" id="appearance" style="margin-bottom:16px">
+        <h3>Appearance</h3>
+        <p class="small muted">Pick a color theme for the whole app and the charts. Changes apply instantly and are remembered.</p>
+        <div class="theme-label">Theme</div>
+        <div id="themeBase" class="theme-row"></div>
+        <div class="theme-label">Accent color <span class="muted small">(buttons, highlights, the buy side)</span></div>
+        <div id="themeAccent" class="theme-row"></div>
+        <div class="theme-label">Candle colors</div>
+        <div id="themeCandles" class="theme-row"></div>
+        <button type="button" class="btn ghost" id="themeReset" style="margin-top:12px">Reset to default</button>
+      </div>
       <div class="card about" style="margin-bottom:16px">
         <h3>Licensed market data</h3>
         <p class="small muted">Personal mode uses free public sources. For licensed data (required before selling the app), add a <a data-url="https://polygon.io/pricing">Polygon.io</a> API key: prices, charts, live quotes and news then come from Polygon, with the free sources as backup.</p>

@@ -207,6 +207,96 @@ class PaperAccount {
     }
   }
 
+  // Add, move or remove (null) a position's stop-loss and take-profit; they cancel each other
+  // when one fills. `trail` (dollars) makes the stop follow the price up (long) or down (short).
+  protect(symbol, { stopLoss, takeProfit, trail } = {}) {
+    this.sync();
+    const p = this.s.positions[symbol];
+    if (!p) throw new Error('No open position');
+    const exit = p.qty > 0 ? 'sell' : 'buy';
+    const qty = Math.abs(p.qty);
+    const working = (role) => this.s.orders.find((o) => o.symbol === symbol && o.status === 'working' && o.role === role);
+    const group = working('stop')?.group || working('target')?.group || `oco-pos-${this.s.nextId}`;
+    const last = this.q[symbol]?.last ?? this.price(symbol);
+    const plan = [];
+    for (const [role, type, value] of [['stop', 'stop', stopLoss], ['target', 'limit', takeProfit]]) {
+      if (value === undefined) continue;
+      const cur = working(role);
+      if (value === null || value === '') {
+        if (cur) plan.push(() => Object.assign(cur, { status: 'cancelled', doneAt: this.now() }));
+        continue;
+      }
+      const v = Number(value);
+      if (!(v > 0 && Number.isFinite(v))) throw new Error('Enter a valid price');
+      const price = +v.toFixed(v >= 1 ? 2 : 4);
+      if (role === 'stop') this.checkStop(symbol, exit, 'stop', price);
+      else if (last && (exit === 'sell' ? price <= last : price >= last)) throw new Error(`Take-profit must be ${exit === 'sell' ? 'above' : 'below'} the current price (${last.toFixed(2)})`);
+      plan.push(() => {
+        if (cur) Object.assign(cur, { price, qty, modifiedAt: this.now() });
+        else this.s.orders.push({ id: this.s.nextId++, symbol, side: exit, qty, type, price, status: 'working', createdAt: this.now(), role, group });
+        if (role === 'stop') {
+          const o = working('stop');
+          if (trail > 0) o.trail = +Number(trail).toFixed(4);
+          else delete o.trail;
+        }
+      });
+    }
+    plan.forEach((f) => f()); // validate everything first, then change
+    this.save();
+    this.tick({});
+    return this.s.positions[symbol];
+  }
+
+  // Move the stop-loss to the average fill price (the trade can no longer lose).
+  breakeven(symbol) {
+    const p = this.s.positions[symbol];
+    if (!p) throw new Error('No open position');
+    return this.protect(symbol, { stopLoss: p.avg });
+  }
+
+  // A trailing stop `amount` dollars behind the price.
+  trail(symbol, amount) {
+    this.sync();
+    const p = this.s.positions[symbol];
+    if (!p) throw new Error('No open position');
+    amount = Number(amount);
+    const last = this.q[symbol]?.last ?? this.price(symbol);
+    if (!(amount > 0)) throw new Error('Enter a trailing distance above zero');
+    if (!last) throw new Error('No live price yet for this symbol');
+    if (amount >= last) throw new Error('The trailing distance must be smaller than the price');
+    return this.protect(symbol, { stopLoss: p.qty > 0 ? last - amount : last + amount, trail: amount });
+  }
+
+  // Flip a long into a short of the same size (or the other way) at market.
+  reverse(symbol) {
+    this.sync();
+    const p = this.s.positions[symbol];
+    if (!p) throw new Error('No open position');
+    for (const o of this.s.orders) if (o.symbol === symbol && o.status === 'working' && o.role !== 'entry') Object.assign(o, { status: 'cancelled', doneAt: this.now() });
+    return this.place({ symbol, side: p.qty > 0 ? 'sell' : 'buy', qty: Math.abs(p.qty) * 2, type: 'market', note: 'Reverse position' });
+  }
+
+  // Close every position at market; returns the symbols that could not be closed (no price yet).
+  closeAll() {
+    this.sync();
+    const failed = [];
+    for (const sym of Object.keys(this.s.positions)) {
+      try {
+        this.close(sym);
+      } catch {
+        failed.push(sym);
+      }
+    }
+    if (failed.length) throw new Error(`Could not close ${failed.join(', ')} yet (no live price). Try again in a few seconds.`);
+  }
+
+  // Cancel every working order, including stop-losses and take-profits.
+  cancelAll() {
+    this.sync();
+    for (const o of this.s.orders) if (o.status === 'working') Object.assign(o, { status: 'cancelled', doneAt: this.now() });
+    this.save();
+  }
+
   // A stop that is already through the market would fill at once: that's a market order.
   checkStop(symbol, side, type, price) {
     if (type !== 'stop') return;
@@ -271,6 +361,18 @@ class PaperAccount {
     const open = marketOpen(now);
     let changed = false;
     if (open) {
+      // Trailing stops follow the last trade, never moving back.
+      for (const o of this.s.orders) {
+        if (o.status !== 'working' || !(o.trail > 0)) continue;
+        const x = this.execQuote(o.symbol);
+        if (!x) continue;
+        const next = o.side === 'sell' ? x.last - o.trail : x.last + o.trail;
+        const rounded = +next.toFixed(next >= 1 ? 2 : 4);
+        if (o.side === 'sell' ? rounded > o.price : rounded < o.price) {
+          o.price = rounded;
+          changed = true;
+        }
+      }
       for (const o of this.s.orders) {
         if (o.status !== 'working') continue;
         const x = this.execQuote(o.symbol);
