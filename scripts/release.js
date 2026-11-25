@@ -93,11 +93,20 @@ async function main() {
   else if (!flag('--dry-run')) {
     // Code-only release: carry the previous installers forward so the "latest" release
     // page always has downloads. They update themselves to this version on first launch.
+    // Re-use the copies built on this computer: downloading them from GitHub would add a fake
+    // "download" to every installer on every release (that's how the early counts got inflated).
     const carry = path.join(DIST, 'carry');
     fs.rmSync(carry, { recursive: true, force: true });
-    const prev = out(`gh release view --repo ${REPO} --json tagName --jq .tagName`);
-    run(`gh release download ${prev} --repo ${REPO} --pattern "*.dmg" --pattern "*.exe" --dir "${carry}"`);
-    for (const f of fs.readdirSync(carry)) assets.push(path.join(carry, f));
+    const prev = JSON.parse(out(`gh release view --repo ${REPO} --json assets`)).assets.filter((a) => /\.(dmg|exe)$/.test(a.name));
+    for (const a of prev) {
+      const local = path.join(DIST, a.name);
+      if (fs.existsSync(local) && fs.statSync(local).size === a.size) assets.push(local);
+      else {
+        console.warn(`! ${a.name} isn't in dist/ (or differs), so downloading it once`);
+        run(`gh release download --repo ${REPO} --pattern "${a.name}" --dir "${carry}"`);
+        assets.push(path.join(carry, a.name));
+      }
+    }
   }
 
   if (flag('--dry-run')) {

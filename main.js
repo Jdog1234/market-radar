@@ -136,8 +136,11 @@ app.whenReady().then(() => {
       if (code.fromUpdate && s) writeState({ ...s, boots: 0 });
     },
   });
-  setTimeout(checkForUpdates, 8000);
-  setInterval(checkForUpdates, CHECK_EVERY_MS);
+  // Development copies (npm start, test runs) don't auto-update, so they don't count as installs.
+  if (app.isPackaged || process.env.MR_DEV_UPDATES) {
+    setTimeout(checkForUpdates, 8000);
+    setInterval(checkForUpdates, CHECK_EVERY_MS);
+  }
 });
 
 app.on('window-all-closed', () => {

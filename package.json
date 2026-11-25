@@ -12,7 +12,8 @@
     "release": "node scripts/release.js",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win --x64",
-    "dist": "electron-builder --mac --win"
+    "dist": "electron-builder --mac --win",
+    "stats": "node scripts/stats.js"
   },
   "devDependencies": {
     "electron": "33.2.1",
