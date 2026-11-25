@@ -280,12 +280,12 @@ $('#settingsForm').addEventListener('submit', async (e) => {
 // ---------- events ----------
 // Pro pages, locked for free users only when the paywall is switched on (cloud.json).
 // Paper trading is free, limited to one chart and 5 open orders (FREE_ORDER_LIMIT in app-main.js).
-const PRO_VIEWS = { before: 'Before the move', trades: 'Trade ideas', lookup: 'Stock lookup' };
+const PRO_VIEWS = { before: 'Before the move', trades: 'Trade ideas', lookup: 'Stock lookup', patterns: 'The pattern library' };
 let acct = { enabled: false, paywall: false, plan: 'free' };
 const isPro = () => !acct.paywall || acct.plan === 'pro';
 const locked = (name) => !isPro() && PRO_VIEWS[name];
 const FREE_ORDERS = 5;
-const PRO_PITCH = 'Pro unlocks Before the move, Trade ideas, Stock lookup, real trading through your broker, up to 4 charts at once, unlimited practice orders and unlimited candle puzzles.';
+const PRO_PITCH = 'Pro unlocks Before the move, Trade ideas, Stock lookup, the full Trading school, the Pattern library, unlimited candle puzzles, real trading through your broker, up to 4 charts at once and unlimited practice orders.';
 
 function showView(name) {
   if (locked(name)) {

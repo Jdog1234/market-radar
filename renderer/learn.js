@@ -448,6 +448,12 @@ $('#view-patterns').addEventListener('click', (e) => {
 // ================= Trading school =================
 const sc = { mod: null, lesson: 0 };
 const scProg = () => store.get('school.progress', { read: {}, passed: {} });
+// Free plan: one lesson of the user's choice; the rest of the course and the quizzes need Pro.
+const lessonKey = (m, i) => `${m.id}/${m.lessons[i]?.id}`;
+const freeLesson = () => store.get('school.freeLesson', null);
+const canOpen = (m, i) => isPro() || (i < m.lessons.length && (!freeLesson() || freeLesson() === lessonKey(m, i)));
+const proLock = (title, text) => `<div class="pz-result" style="margin-top:14px"><b>🔒 ${esc(title)}</b><p class="small muted" style="margin:6px 0 10px">${esc(text)}</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-upgrade="month">Get Pro ($19/month)</button><button class="btn ghost" data-upgrade="year">Yearly ($149, save 35%)</button><button class="btn ghost" data-goto="settings">I have a license key</button></div></div>`;
 function renderSchool() {
   const S = window.SCHOOL || [];
   const pr = scProg();
@@ -456,23 +462,35 @@ function renderSchool() {
   const passed = S.filter((m) => pr.passed[m.id]).length;
   const pct = total ? Math.round(((read + passed) / (total + S.length)) * 100) : 0;
   if (sc.mod == null) {
-    $('#school').innerHTML = `<div class="sc-top"><div><h2>Trading school</h2><p class="muted small" style="max-width:640px;margin:4px 0 0">A complete course, from your first order to running a trading plan. Lessons include hands-on simulators, real-chart drills, a trade replay demo and practice missions in the Trading screen's simulated account (fake money). Each module ends with a short quiz.</p></div>
+    $('#school').innerHTML = `<div class="sc-top"><div><h2>Trading school</h2><p class="muted small" style="max-width:640px;margin:4px 0 0">A complete course, from your first order to running a trading plan. Lessons include hands-on simulators, real-chart drills, a trade replay demo and practice missions in the Trading screen's simulated account (fake money). Each module ends with a short quiz.</p>
+      ${isPro() ? '' : `<p class="small" style="margin:8px 0 0">${freeLesson() ? `Free plan: your free lesson is <b>${esc(freeLessonTitle(S))}</b>. Pro unlocks every lesson, tool and quiz.` : 'Free plan: open <b>any one lesson</b> you like for free. Pro unlocks every lesson, tool and quiz.'}</p>`}</div>
       <div class="sc-prog"><div class="small"><b>${pct}%</b> complete · ${passed} of ${S.length} modules passed${passed === S.length && S.length ? ' 🎓' : ''}</div><div class="pz-xp"><i style="width:${pct}%"></i></div></div></div>
       <div class="sc-mods">${S.map((m, i) => {
         const r = m.lessons.filter((l) => pr.read[`${m.id}/${l.id}`]).length;
         const tools = m.lessons.reduce((n, l) => n + (l.body.match(/data-widget=/g) || []).length, 0);
         return `<div class="sc-mod" data-scmod="${i}"><div class="n">Module ${i + 1} · ${m.lessons.length} lessons${tools ? ` · ${tools} hands-on` : ''} + quiz</div><h3>${esc(m.title)}</h3><p>${esc(m.summary)}</p>
-          ${pr.passed[m.id] ? '<div class="done">✓ Passed</div>' : `<div class="small muted">${r} of ${m.lessons.length} lessons read</div>`}</div>`;
+          ${pr.passed[m.id] ? '<div class="done">✓ Passed</div>' : `<div class="small muted">${r} of ${m.lessons.length} lessons read</div>`}${!isPro() && String(freeLesson() || '').startsWith(`${m.id}/`) ? '<div class="small up">Has your free lesson</div>' : !isPro() && freeLesson() ? '<div class="small muted">🔒 Pro</div>' : ''}</div>`;
       }).join('')}</div>
       <p class="small muted" style="margin-top:18px">Educational content, not financial advice. Trading involves risk of loss.</p>`;
     return;
   }
   const m = S[sc.mod];
   const quiz = sc.lesson === m.lessons.length;
-  const toc = m.lessons.map((l, i) => `<button data-sclesson="${i}" class="${i === sc.lesson ? 'on' : ''} ${pr.read[`${m.id}/${l.id}`] ? 'read' : ''}">${i + 1}. ${esc(l.title)}</button>`).join('') +
-    `<button data-sclesson="${m.lessons.length}" class="${quiz ? 'on' : ''} ${pr.passed[m.id] ? 'read' : ''}">Quiz</button><button data-scback="1" style="margin-top:10px">← All modules</button>`;
+  const lock = (i) => (canOpen(m, i) || (!freeLesson() && i < m.lessons.length) ? '' : ' 🔒');
+  const toc = m.lessons.map((l, i) => `<button data-sclesson="${i}" class="${i === sc.lesson ? 'on' : ''} ${pr.read[`${m.id}/${l.id}`] ? 'read' : ''}">${i + 1}. ${esc(l.title)}${lock(i)}</button>`).join('') +
+    `<button data-sclesson="${m.lessons.length}" class="${quiz ? 'on' : ''} ${pr.passed[m.id] ? 'read' : ''}">Quiz${lock(m.lessons.length)}</button><button data-scback="1" style="margin-top:10px">← All modules</button>`;
   let body;
-  if (!quiz) {
+  const free = !isPro();
+  if (free && quiz) {
+    body = `<div class="small muted">Module ${sc.mod + 1}: ${esc(m.title)}</div><h2>Quiz</h2>${proLock('Quizzes are part of Pro', 'Pro unlocks all 10 modules: every lesson, hands-on tool, trading demo, practice mission and quiz.')}`;
+  } else if (free && !freeLesson()) {
+    const l = m.lessons[sc.lesson];
+    body = `<div class="small muted">Module ${sc.mod + 1}: ${esc(m.title)}</div><h2>${esc(l.title)}</h2>
+      <div class="pz-result" style="margin-top:14px"><b>Use your free lesson here?</b><p class="small muted" style="margin:6px 0 10px">The free plan includes <b>one lesson of your choice</b>, with its hands-on tools. Once you open one, the others need Pro, so pick the topic you want most.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-scfree="${lessonKey(m, sc.lesson)}">Open this as my free lesson</button><button class="btn ghost" data-scback="1">Choose a different one</button><button class="btn ghost" data-upgrade="month">Get Pro: every lesson</button></div></div>`;
+  } else if (free && !canOpen(m, sc.lesson)) {
+    body = `<div class="small muted">Module ${sc.mod + 1}: ${esc(m.title)}</div><h2>${esc(m.lessons[sc.lesson].title)}</h2>${proLock('This lesson is part of Pro', `You've used your free lesson (${freeLessonTitle(S)}). Pro unlocks all 33 lessons, the hands-on tools, trading demos, missions and quizzes.`)}`;
+  } else if (!quiz) {
     const l = m.lessons[sc.lesson];
     pr.read[`${m.id}/${l.id}`] = true;
     store.set('school.progress', pr);
@@ -489,8 +507,17 @@ function renderSchool() {
   $('#view-school').scrollTop = 0;
   document.querySelector('main')?.scrollTo?.(0, 0);
 }
+function freeLessonTitle(S) {
+  const [mid, lid] = String(freeLesson() || '').split('/');
+  return S.find((m) => m.id === mid)?.lessons.find((l) => l.id === lid)?.title || '';
+}
 $('#view-school').addEventListener('click', (e) => {
   const S = window.SCHOOL || [];
+  const fr = e.target.closest('[data-scfree]');
+  if (fr) {
+    store.set('school.freeLesson', fr.dataset.scfree);
+    return renderSchool();
+  }
   const mod = e.target.closest('[data-scmod]');
   if (mod) {
     sc.mod = +mod.dataset.scmod;

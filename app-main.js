@@ -258,8 +258,8 @@ async function ensureLearn() {
   }
 }
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-// Free plan (paywall on): 10 puzzles a day.
-const FREE_PUZZLES = 10;
+// Free plan (paywall on): 3 puzzles a day.
+const FREE_PUZZLES = 3;
 function puzzleAllowance() {
   const st = account.status();
   const today = new Date().toISOString().slice(0, 10);
