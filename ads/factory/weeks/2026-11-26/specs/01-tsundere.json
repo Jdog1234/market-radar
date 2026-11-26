@@ -1,0 +1,41 @@
+{
+  "id": "tsundere",
+  "title": "How to Trade like a Tsundere",
+  "trend": { "name": "Anime character POV / tsundere archetype", "source": "manual (first ad)", "fit": "Character-driven learning story" },
+  "duration": 31,
+  "hook": { "from": 0.2, "to": 4.3, "l1": "How to trade like a", "l2": "TSUNDERE", "speed": true },
+  "chart": { "from": 4.3, "to": 8.1 },
+  "panels": [
+    { "from": 8.1, "to": 14.1, "chip": "TRADING SCHOOL", "color": "#ff4f8b", "shots": [
+      { "img": "school-home", "at": 8.1, "top": 30, "drift": 30 },
+      { "img": "school-liquidity", "at": 10.8, "top": 24 } ] },
+    { "from": 14.1, "to": 20.1, "chip": "CANDLE PUZZLES", "color": "#22b573", "shots": [
+      { "img": "puzzle-picked", "at": 14.1, "top": 28, "width": 760, "rings": [ { "spot": "answer", "at": 15.6 }, { "spot": "xp", "at": 17.4 } ] } ] },
+    { "from": 20.1, "to": 25.9, "chip": "PATTERN LIBRARY", "color": "#f59e0b", "shots": [
+      { "img": "library", "at": 20.1, "top": 28, "drift": 25 },
+      { "img": "library-hammer", "at": 21.8, "top": 24, "scroll": { "by": 340, "at": 22.4 }, "rings": [ { "spot": "stats", "at": 23.4 } ] } ] }
+  ],
+  "captions": [
+    { "from": 8.4, "to": 11, "text": "10 modules · 33 lessons · quizzes" },
+    { "from": 11, "to": 14.1, "text": "Hands-on demos, not just reading" },
+    { "from": 14.4, "to": 20.1, "text": "Real charts. Name the pattern. Call the move." },
+    { "from": 20.4, "to": 23, "text": "22 patterns, drawn and explained" },
+    { "from": 23, "to": 25.9, "text": "...plus what REALLY happened after them" }
+  ],
+  "lines": [
+    { "from": 0.6, "to": 4.2, "pose": "big", "face": "hmph", "text": "It's not like I <b>WANT</b> to learn trading or anything!" },
+    { "from": 4.4, "to": 8.0, "pose": "big", "face": "shock", "text": "W-what even IS a candlestick?! 💢" },
+    { "from": 8.3, "to": 11.0, "pose": "side", "face": "pout", "text": "Fine. <b>ONE</b> lesson. Hmph.", "say": "Fine. ONE lesson. Hmmph." },
+    { "from": 11.0, "to": 14.0, "pose": "side", "face": "blush", "text": "...okay, the order book demo is kinda cool." },
+    { "from": 14.3, "to": 17.2, "pose": "side", "face": "smug", "text": "Tweezer top. Obviously. I wasn't guessing!" },
+    { "from": 17.2, "to": 20.0, "pose": "side", "face": "blush", "text": "+25 XP... n-not that I care!", "say": "Twenty five X P... n-not that I care!" },
+    { "from": 20.3, "to": 23.0, "pose": "side", "face": "shock", "text": "The hammer only went up <b>51%</b> of the time?!", "say": "The hammer only went up fifty one percent of the time?!" },
+    { "from": 23.0, "to": 25.8, "pose": "side", "face": "pout", "text": "...at least this app doesn't lie to me." },
+    { "from": 26.0, "to": 31.0, "pose": "end", "face": "blush", "text": "D-don't download it just because I said so... <b>baka!</b>" }
+  ],
+  "endAt": 25.9,
+  "post": {
+    "caption": "POV: you learn to trade but you're too proud to admit it 💢 Market Radar is a learning app: lessons, candle puzzles & a pattern library. Free plan. Not financial advice.",
+    "hashtags": ["#learntotrade", "#candlesticks", "#tradingeducation", "#anime", "#tsundere"]
+  }
+}

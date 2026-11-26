@@ -1,0 +1,179 @@
+{
+  "id": "except-me",
+  "title": "In this town everybody buys the hype... except me",
+  "trend": {
+    "name": "\"In this town everybody goes out partying except me\" (Huss huss huss meme)",
+    "type": "phrase",
+    "source": "Know Your Meme, November 2026; #husshusshuss in Creative Center US top 3 (7 days)",
+    "fit": "Phrase format only. The original clip, its audio and its game character are NOT used"
+  },
+  "duration": 25.5,
+  "hook": {
+    "from": 0.2,
+    "to": 4.2,
+    "l1": "In this town everybody",
+    "l2": "BUYS THE HYPE",
+    "size2": 112,
+    "speed": true
+  },
+  "chart": {
+    "from": 4.2,
+    "to": 7.2,
+    "label": "Mystery chart · daily candles",
+    "confused": false
+  },
+  "panels": [
+    {
+      "from": 7.3,
+      "to": 12.8,
+      "chip": "CANDLE PUZZLES",
+      "color": "#22b573",
+      "shots": [
+        {
+          "img": "puzzle-picked",
+          "at": 7.3,
+          "top": 28,
+          "width": 760,
+          "rings": [
+            {
+              "spot": "answer",
+              "at": 9.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "from": 12.9,
+      "to": 17.6,
+      "chip": "TRADING SCHOOL",
+      "color": "#ff4f8b",
+      "shots": [
+        {
+          "img": "school-liquidity",
+          "at": 12.9,
+          "top": 24,
+          "rings": [
+            {
+              "spot": "fillStats",
+              "at": 14.2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "from": 17.7,
+      "to": 20.4,
+      "chip": "PATTERN LIBRARY",
+      "color": "#f59e0b",
+      "shots": [
+        {
+          "img": "library-hammer",
+          "at": 17.7,
+          "top": 24,
+          "scroll": {
+            "by": 340,
+            "at": 17.9,
+            "dur": 0.8
+          },
+          "rings": [
+            {
+              "spot": "stats",
+              "at": 18.9
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "captions": [
+    {
+      "from": 7.6,
+      "to": 12.8,
+      "text": "Real charts, stock name hidden"
+    },
+    {
+      "from": 13.1,
+      "to": 17.6,
+      "text": "Hands-on demos: how orders really fill"
+    },
+    {
+      "from": 17.9,
+      "to": 20.4,
+      "text": "What really happened after each pattern"
+    }
+  ],
+  "lines": [
+    {
+      "from": 0.5,
+      "to": 4.1,
+      "pose": "big",
+      "face": "pout",
+      "text": "In this town, everybody buys the hype..."
+    },
+    {
+      "from": 4.3,
+      "to": 7.1,
+      "pose": "big",
+      "face": "hmph",
+      "text": "...except me. I'm home studying candles.",
+      "say": "except me. I'm home, studying candles."
+    },
+    {
+      "from": 7.5,
+      "to": 10.1,
+      "pose": "side",
+      "face": "smug",
+      "text": "Mystery chart. Name the pattern. Easy."
+    },
+    {
+      "from": 10.2,
+      "to": 12.7,
+      "pose": "side",
+      "face": "blush",
+      "text": "Okay, it was not easy. But I got it."
+    },
+    {
+      "from": 13.1,
+      "to": 15.6,
+      "pose": "side",
+      "face": "pout",
+      "text": "Order books and slippage? Useful, actually."
+    },
+    {
+      "from": 15.7,
+      "to": 17.5,
+      "pose": "side",
+      "face": "smug",
+      "text": "The hype crowd skips this part."
+    },
+    {
+      "from": 17.9,
+      "to": 20.3,
+      "pose": "side",
+      "face": "shock",
+      "text": "Even classic patterns need real stats?!"
+    },
+    {
+      "from": 20.5,
+      "to": 25.5,
+      "pose": "end",
+      "face": "blush",
+      "text": "Everybody's out partying. I'm learning. <b>Hmph.</b>",
+      "say": "Everybody's out partying. I'm learning. Hmmph."
+    }
+  ],
+  "endAt": 20.4,
+  "post": {
+    "caption": "In this town everybody buys the hype… except me 💢 Market Radar is a learning app: lessons, candle puzzles & a pattern library. Free plan. Not financial advice.",
+    "hashtags": [
+      "#exceptme",
+      "#learntotrade",
+      "#candlesticks",
+      "#tradingeducation",
+      "#anime",
+      "#tsundere"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "_about": "Screenshots ads may use. Taken by shoot.js from a throwaway copy of the app. Coordinates are in the screenshot's own pixels (1580 wide). 'ticker: true' means a real stock symbol is visible, so check.js blocks that shot: TikTok's US ad policy bans ads for single securities.",
+  "school-home": { "ticker": false, "shows": "Trading school module list: 10 modules", "spots": { "module3": [40, 635, 738, 305], "module4": [802, 635, 738, 305] } },
+  "school-liquidity": { "ticker": false, "shows": "Hands-on order book demo (send a market buy)", "spots": { "fillStats": [895, 230, 615, 290] } },
+  "school-candle": { "ticker": false, "shows": "Candle anatomy hands-on widget" },
+  "puzzle": { "ticker": false, "shows": "Candle puzzle, mystery stock, nothing picked" },
+  "puzzle-picked": { "ticker": false, "shows": "Candle puzzle, mystery stock, 'Tweezer top' picked", "spots": { "xp": [40, 24, 380, 142], "answer": [70, 1303, 712, 82], "chart": [40, 268, 1500, 915] } },
+  "puzzle-solved": { "ticker": true, "shows": "Solved puzzle revealing the stock symbol" },
+  "library": { "ticker": false, "shows": "Pattern library grid with real stats per pattern", "spots": { "hammer": [40, 24, 483, 388] } },
+  "library-hammer": { "ticker": false, "shows": "Hammer detail page with 'what really happened' stats (51% vs 53% any day)", "spots": { "stats": [60, 1270, 600, 85] } },
+  "icon": { "ticker": false, "shows": "App icon" }
+}

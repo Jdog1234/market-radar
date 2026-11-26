@@ -1,0 +1,38 @@
+{
+  "id": "trader-loading",
+  "title": "Trader loading 0% → 100%",
+  "trend": { "name": "\"Loading percentage\" transition format", "type": "format", "source": "Virlo November 2026 rising trends (web)", "fit": "Progress through school → puzzles → library as a loading bar; format only, no borrowed audio or footage" },
+  "duration": 26,
+  "hook": { "from": 0.2, "to": 3.8, "l1": "Trader loading...", "l2": "0%", "speed": true },
+  "panels": [
+    { "from": 3.9, "to": 9.6, "chip": "TRADER LOADING 34%", "color": "#ff4f8b", "shots": [
+      { "img": "school-home", "at": 3.9, "top": 30, "drift": 30 },
+      { "img": "school-candle", "at": 6.6, "top": 0 } ] },
+    { "from": 9.7, "to": 15.4, "chip": "TRADER LOADING 67%", "color": "#22b573", "shots": [
+      { "img": "puzzle-picked", "at": 9.7, "top": 28, "width": 760, "rings": [ { "spot": "answer", "at": 11.2 }, { "spot": "xp", "at": 13.0 } ] } ] },
+    { "from": 15.5, "to": 20.9, "chip": "TRADER LOADING 99%", "color": "#f59e0b", "shots": [
+      { "img": "library", "at": 15.5, "top": 28, "drift": 25 },
+      { "img": "library-hammer", "at": 17.2, "top": 24, "scroll": { "by": 340, "at": 17.8 }, "rings": [ { "spot": "stats", "at": 18.8 } ] } ] }
+  ],
+  "captions": [
+    { "from": 4.2, "to": 9.6, "text": "Lessons with hands-on demos" },
+    { "from": 10.0, "to": 15.4, "text": "Candle puzzles on real charts" },
+    { "from": 15.8, "to": 18.2, "text": "22 patterns with real stats" },
+    { "from": 18.2, "to": 20.9, "text": "...including the ones that don't work" }
+  ],
+  "lines": [
+    { "from": 0.5, "to": 3.7, "pose": "big", "face": "shock", "text": "Day one. I don't even know what a candle is." },
+    { "from": 4.1, "to": 6.8, "pose": "side", "face": "pout", "text": "Fine. I'll do the lessons. Hmph.", "say": "Fine. I'll do the lessons. Hmmph." },
+    { "from": 6.9, "to": 9.5, "pose": "side", "face": "blush", "text": "...the candle demo actually makes sense." },
+    { "from": 9.9, "to": 12.6, "pose": "side", "face": "smug", "text": "Tweezer top. Called it." },
+    { "from": 12.7, "to": 15.3, "pose": "side", "face": "blush", "text": "+25 XP. It's whatever.", "say": "Twenty five X P. It's whatever." },
+    { "from": 15.7, "to": 18.2, "pose": "side", "face": "shock", "text": "Wait, the hammer is basically a coin flip?!" },
+    { "from": 18.3, "to": 20.8, "pose": "side", "face": "pout", "text": "Good. I'd rather know the truth." },
+    { "from": 21.0, "to": 26.0, "pose": "end", "face": "blush", "text": "Fully loaded. D-don't make it weird!" }
+  ],
+  "endAt": 20.9,
+  "post": {
+    "caption": "Trader loading… 0% → 100% Lessons, candle puzzles & a pattern library in one learning app. Free plan. Not financial advice.",
+    "hashtags": ["#loading", "#transition", "#learntotrade", "#candlesticks", "#tradingeducation", "#anime"]
+  }
+}
