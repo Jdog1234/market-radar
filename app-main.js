@@ -16,6 +16,8 @@ const { YahooStream } = require('./engine/stream');
 const { Alerts } = require('./engine/alerts');
 const { AlpacaAccount } = require('./engine/alpaca');
 const patterns = require('./engine/patterns');
+const phone = require('./engine/phone-server');
+const crypto = require('crypto');
 
 const DEFAULTS = {
   watchlist: ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'AMD', 'GOOGL'],
@@ -75,13 +77,30 @@ let alerts;
 let account;
 let broker = null; // AlpacaAccount when keys are saved
 let brokerError = null;
-let paperWatch = []; // symbols the paper-trading screen is showing
+let paperWatch = []; // symbols the paper-trading screens are showing (desktop + phone, combined)
+const watchBy = {}; // client -> { syms, at }
 let lastQuotes = {};
 const stream = new YahooStream();
 
 const send = (ch, d) => {
   if (win && !win.isDestroyed()) win.webContents.send(ch, d);
+  phone.broadcast(ch, d);
 };
+// Every IPC handler is also kept here so the phone server can call the same code.
+const H = {};
+// Trading actions the phone may only use on the simulated account: real-broker orders stay on the Mac.
+const PHONE_SIM_ONLY = new Set(['paper:order', 'paper:cancel', 'paper:modify', 'paper:close', 'paper:bracket', 'paper:protect', 'paper:breakeven', 'paper:trail', 'paper:reverse', 'paper:closeAll', 'paper:cancelAll']);
+const handle = (ch, fn) => {
+  H[ch] = PHONE_SIM_ONLY.has(ch)
+    ? (e, ...a) => {
+        if (active() !== paper) throw new Error('Orders on your real broker account can only be placed from the Mac. Switch to the simulated account to trade from the phone.');
+        return fn(e, ...a);
+      }
+    : fn;
+  ipcMain.handle(ch, fn);
+};
+// Keys, licenses, billing and broker setup: Mac window only, never reachable from the phone.
+const desktopOnly = (ch, fn) => ipcMain.handle(ch, fn);
 const feed = () => ({ mode: stream.healthy() ? 'stream' : 'poll', connected: stream.connected, lastTickAt: stream.lastTickAt || null });
 // Real trading needs Pro once subscriptions are on.
 const brokerAllowed = () => {
@@ -312,12 +331,36 @@ function createWindow(launcher) {
   });
 }
 
+// ---- Phone app: the Mac serves the same UI + data to phones on the same Wi-Fi ----
+const phoneFile = () => path.join(dataDir(), 'phone.json');
+let phoneCfg = { enabled: false, token: '' };
+const newToken = () => crypto.randomBytes(12).toString('base64url');
+const savePhone = () => fs.writeFileSync(phoneFile(), JSON.stringify(phoneCfg, null, 2));
+let phoneUrls = [];
+async function applyPhone() {
+  if (phoneCfg.enabled) {
+    phoneUrls = await phone.start({
+      port: 8765,
+      getToken: () => phoneCfg.token,
+      handlers: H,
+      rendererDir: path.join(__dirname, 'renderer'),
+      version: require('./package.json').version,
+    });
+  } else {
+    phone.stop();
+    phoneUrls = [];
+  }
+}
+function phoneInfo() {
+  return { enabled: phoneCfg.enabled, running: phone.running(), urls: phoneUrls, token: phoneCfg.token, connected: phone.clientCount() };
+}
+
 async function runScan() {
   if (scanning) return lastScan;
   scanning = true;
-  win?.webContents.send('scan:progress', { stage: 'Starting…', pct: 0 });
+  send('scan:progress', { stage: 'Starting…', pct: 0 });
   try {
-    const result = await scan({ ...settings, econCacheFile: path.join(dataDir(), 'econ-cache.json') }, (p) => win?.webContents.send('scan:progress', p));
+    const result = await scan({ ...settings, econCacheFile: path.join(dataDir(), 'econ-cache.json') }, (p) => send('scan:progress', p));
     // Calendars are rate-limited upstream; keep the last good copy rather than showing nothing.
     if (!result.econ.length && lastScan?.econ?.length) result.econ = lastScan.econ;
     if (!result.earnings.length && lastScan?.earnings?.length) result.earnings = lastScan.earnings;
@@ -328,9 +371,9 @@ async function runScan() {
     } catch {}
     attachChances(result);
     notifyNew(result);
-    win?.webContents.send('scan:result', result);
+    send('scan:result', result);
   } catch (err) {
-    win?.webContents.send('scan:error', String(err?.message || err));
+    send('scan:error', String(err?.message || err));
   } finally {
     scanning = false;
   }
@@ -360,8 +403,8 @@ function schedule() {
 
 function start(launcher) {
   setCacheDir(dataDir());
-  ipcMain.handle('settings:get', () => publicSettings());
-  ipcMain.handle('settings:set', (_e, next) => {
+  handle('settings:get', () => publicSettings());
+  handle('settings:set', (_e, next) => {
     const { polygonKeyEnc, polygonConfigured, ...allowed } = next || {};
     settings = { ...settings, ...allowed };
     fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
@@ -369,7 +412,7 @@ function start(launcher) {
     schedule();
     return publicSettings();
   });
-  ipcMain.handle('data:setPolygonKey', (_e, key) => {
+  desktopOnly('data:setPolygonKey', (_e, key) => {
     key = String(key || '').trim();
     if (key && !safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this computer, so the key was not saved');
     settings.polygonKeyEnc = key ? safeStorage.encryptString(key).toString('base64') : '';
@@ -377,26 +420,30 @@ function start(launcher) {
     applyDataConfig();
     return publicSettings();
   });
-  ipcMain.handle('data:testPolygon', () => (polygon.enabled() ? polygon.test() : { errors: ['No Polygon key saved yet'] }));
-  ipcMain.handle('scan:last', () => lastScan);
-  ipcMain.handle('scan:run', () => runScan());
-  ipcMain.handle('stock:search', (_e, q) => search(q));
-  ipcMain.handle('stock:lookup', (_e, sym) => lookup(sym, lastScan));
-  ipcMain.handle('track:get', () => trackRecord(true));
-  ipcMain.handle('paper:get', () => snapshot());
-  ipcMain.handle('paper:watch', async (_e, syms) => {
-    paperWatch = [...new Set((syms || []).map((x) => String(x).toUpperCase().trim()).filter(Boolean))].slice(0, 60);
+  desktopOnly('data:testPolygon', () => (polygon.enabled() ? polygon.test() : { errors: ['No Polygon key saved yet'] }));
+  handle('scan:last', () => lastScan);
+  handle('scan:run', () => runScan());
+  handle('stock:search', (_e, q) => search(q));
+  handle('stock:lookup', (_e, sym) => lookup(sym, lastScan));
+  handle('track:get', () => trackRecord(true));
+  handle('paper:get', () => snapshot());
+  handle('paper:watch', async (_e, syms) => {
+    const mine = [...new Set((syms || []).map((x) => String(x).toUpperCase().trim()).filter(Boolean))].slice(0, 60);
+    watchBy[_e?.client || 'desktop'] = { syms: mine, at: Date.now() };
+    // a phone that stopped asking for a while is gone; drop its symbols
+    for (const [k, v] of Object.entries(watchBy)) if (k !== 'desktop' && Date.now() - v.at > 10 * 60e3) delete watchBy[k];
+    paperWatch = [...new Set(Object.values(watchBy).flatMap((v) => v.syms))].slice(0, 80);
     streamSymbols();
     // Names, previous close and a first price for anything we haven't seen yet.
-    const missing = paperWatch.filter((x) => !lastQuotes[x]?.name);
+    const missing = mine.filter((x) => !lastQuotes[x]?.name);
     if (missing.length) {
       mergePolled(await quotes(missing).catch(() => ({})));
       paper.tick(lastQuotes);
     }
     return snapshot();
   });
-  ipcMain.handle('paper:candles', (_e, sym, tf) => candles(sym, tf));
-  ipcMain.handle('paper:order', async (_e, o) => {
+  handle('paper:candles', (_e, sym, tf) => candles(sym, tf));
+  handle('paper:order', async (_e, o) => {
     // Make sure we have a fresh price before accepting the order (the stream usually has one).
     const sym = String(o?.symbol || '').toUpperCase();
     const q = lastQuotes[sym];
@@ -415,21 +462,21 @@ function start(launcher) {
   });
   // Order ids are numbers in the simulator and strings at the broker.
   const oid = (id) => (active() === paper ? Number(id) : String(id));
-  ipcMain.handle('paper:cancel', (_e, id) => paperDo(() => active().cancel(oid(id))));
-  ipcMain.handle('paper:modify', (_e, id, changes) => paperDo(() => active().modify(oid(id), changes || {})));
-  ipcMain.handle('paper:close', (_e, sym) => paperDo(() => active().close(String(sym))));
-  ipcMain.handle('paper:bracket', (_e, sym, b) => paperDo(() => paper.modifyBracket(sym, b)));
-  ipcMain.handle('paper:protect', (_e, sym, b) => paperDo(() => active().protect(String(sym), b || {})));
-  ipcMain.handle('paper:breakeven', (_e, sym) => paperDo(() => active().breakeven(String(sym))));
-  ipcMain.handle('paper:trail', (_e, sym, amount) => paperDo(() => active().trail(String(sym), Number(amount))));
-  ipcMain.handle('paper:reverse', (_e, sym, confirmed) => {
+  handle('paper:cancel', (_e, id) => paperDo(() => active().cancel(oid(id))));
+  handle('paper:modify', (_e, id, changes) => paperDo(() => active().modify(oid(id), changes || {})));
+  handle('paper:close', (_e, sym) => paperDo(() => active().close(String(sym))));
+  handle('paper:bracket', (_e, sym, b) => paperDo(() => paper.modifyBracket(sym, b)));
+  handle('paper:protect', (_e, sym, b) => paperDo(() => active().protect(String(sym), b || {})));
+  handle('paper:breakeven', (_e, sym) => paperDo(() => active().breakeven(String(sym))));
+  handle('paper:trail', (_e, sym, amount) => paperDo(() => active().trail(String(sym), Number(amount))));
+  handle('paper:reverse', (_e, sym, confirmed) => {
     if (active() === broker && broker.env === 'live' && confirmed !== true) throw new Error('Live orders must be confirmed first');
     return paperDo(() => active().reverse(String(sym)));
   });
-  ipcMain.handle('paper:closeAll', () => paperDo(() => active().closeAll()));
-  ipcMain.handle('paper:cancelAll', () => paperDo(() => active().cancelAll()));
+  handle('paper:closeAll', () => paperDo(() => active().closeAll()));
+  handle('paper:cancelAll', () => paperDo(() => active().cancelAll()));
   // ---- broker connection (Alpaca) ----
-  ipcMain.handle('broker:setKeys', async (_e, { id, secret, env } = {}) => {
+  desktopOnly('broker:setKeys', async (_e, { id, secret, env } = {}) => {
     id = String(id || '').trim();
     secret = String(secret || '').trim();
     if (!id || !secret) throw new Error('Enter both the API key ID and the secret key');
@@ -442,18 +489,18 @@ function start(launcher) {
     buildBroker();
     return { ...info, settings: publicSettings() };
   });
-  ipcMain.handle('broker:test', () => {
+  desktopOnly('broker:test', () => {
     if (!broker) throw new Error('No broker connected yet');
     return broker.test();
   });
-  ipcMain.handle('broker:remove', () => {
+  desktopOnly('broker:remove', () => {
     settings.brokerKeyEnc = '';
     settings.tradeAccount = 'sim';
     fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
     buildBroker();
     return paperDo(() => {});
   });
-  ipcMain.handle('broker:select', async (_e, which) => {
+  desktopOnly('broker:select', async (_e, which) => {
     if (which === 'broker') {
       if (!broker) throw new Error('Connect a broker first: click + Connect broker at the top of the Trading screen');
       if (!brokerAllowed()) throw new Error('Trading with a real broker is a Pro feature');
@@ -463,32 +510,32 @@ function start(launcher) {
     fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
     return paperDo(() => {});
   });
-  ipcMain.handle('broker:setLimit', (_e, value) => {
+  desktopOnly('broker:setLimit', (_e, value) => {
     const v = Math.max(0, Math.round(Number(value) || 0));
     settings.maxOrderValue = v;
     if (broker) broker.maxOrderValue = v;
     fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
     return publicSettings();
   });
-  ipcMain.handle('alerts:add', (_e, a) => paperDo(() => alerts.add({ ...a, last: lastQuotes[String(a?.symbol || '').toUpperCase()]?.last })));
-  ipcMain.handle('alerts:remove', (_e, id) => paperDo(() => alerts.remove(Number(id))));
-  ipcMain.handle('alerts:clearFired', () => paperDo(() => alerts.clearFired()));
-  ipcMain.handle('paper:reset', (_e, cash) => {
+  handle('alerts:add', (_e, a) => paperDo(() => alerts.add({ ...a, last: lastQuotes[String(a?.symbol || '').toUpperCase()]?.last })));
+  handle('alerts:remove', (_e, id) => paperDo(() => alerts.remove(Number(id))));
+  handle('alerts:clearFired', () => paperDo(() => alerts.clearFired()));
+  handle('paper:reset', (_e, cash) => {
     if (active() !== paper) throw new Error('Reset only applies to the simulated account');
     return paperDo(() => paper.reset(Number(cash) || settings.accountSize || 10000));
   });
-  ipcMain.handle('account:status', () => account.status());
-  ipcMain.handle('account:activate', (_e, key) => account.activate(key));
-  ipcMain.handle('account:refresh', () => account.refreshPlan({ force: true }));
-  ipcMain.handle('account:signout', () => account.signOut());
-  ipcMain.handle('account:upgrade', async (_e, interval) => shell.openExternal(await account.checkoutUrl(interval === 'year' ? 'year' : 'month')));
-  ipcMain.handle('account:billing', async () => shell.openExternal(await account.portalUrl()));
-  ipcMain.handle('learn:stats', async () => {
+  handle('account:status', () => account.status());
+  desktopOnly('account:activate', (_e, key) => account.activate(key));
+  handle('account:refresh', () => account.refreshPlan({ force: true }));
+  desktopOnly('account:signout', () => account.signOut());
+  desktopOnly('account:upgrade', async (_e, interval) => shell.openExternal(await account.checkoutUrl(interval === 'year' ? 'year' : 'month')));
+  desktopOnly('account:billing', async () => shell.openExternal(await account.portalUrl()));
+  handle('learn:stats', async () => {
     const { result } = await ensureLearn();
     return { patterns: patterns.PATTERNS, stats: result.stats, baseline: result.baseline, symbols: result.symbols, from: result.from, to: result.to, horizon: result.horizon, allowance: puzzleAllowance() };
   });
   // A random real occurrence (optionally of one pattern), with 4 name choices.
-  ipcMain.handle('learn:puzzle', async (_e, opts = {}) => {
+  handle('learn:puzzle', async (_e, opts = {}) => {
     const a = puzzleAllowance();
     if (a.left === 0) throw new Error(`You've played today's ${FREE_PUZZLES} free puzzles. Pro gives you unlimited puzzles, or come back tomorrow.`);
     const { dataset, result } = await ensureLearn();
@@ -508,7 +555,7 @@ function start(launcher) {
     return { ...w, choices: [p.id, ...distract].sort(() => Math.random() - 0.5), stat: result.stats[p.id], baseline: result.baseline, horizon: result.horizon, allowance: puzzleAllowance() };
   });
   // A real example of a pattern for the library (doesn't count as a puzzle).
-  ipcMain.handle('learn:example', async (_e, id) => {
+  handle('learn:example', async (_e, id) => {
     const { dataset, result } = await ensureLearn();
     const hits = result.hits.filter((h) => h.id === id && h.i >= 50);
     if (!hits.length) throw new Error('No real example in the data yet');
@@ -516,7 +563,7 @@ function start(launcher) {
   });
   // A random stretch of real daily bars (stock hidden until the end) for the school's trend
   // drill and trade replay: `before` bars to study, then `after` bars to play forward.
-  ipcMain.handle('learn:replay', async (_e, { before = 60, after = 25 } = {}) => {
+  handle('learn:replay', async (_e, { before = 60, after = 25 } = {}) => {
     const { dataset } = await ensureLearn();
     const syms = Object.keys(dataset).filter((s) => dataset[s].length >= before + after + 30);
     const sym = pick(syms);
@@ -524,13 +571,31 @@ function start(launcher) {
     const end = 20 + before + Math.floor(Math.random() * (bars.length - before - after - 20));
     return { symbol: sym, bars: bars.slice(end - before, end), future: bars.slice(end, end + after), atr: patterns.atr(bars, end), date: bars[end - 1].time * 1000 };
   });
-  ipcMain.handle('guide:get', () => fs.readFileSync(path.join(__dirname, 'RESEARCH.md'), 'utf8'));
-  ipcMain.handle('open:external', (_e, url) => {
+  handle('guide:get', () => fs.readFileSync(path.join(__dirname, 'RESEARCH.md'), 'utf8'));
+  desktopOnly('open:external', (_e, url) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
+  });
+
+  handle('phone:info', () => phoneInfo());
+  handle('phone:set', async (_e, on) => {
+    phoneCfg.enabled = !!on;
+    savePhone();
+    await applyPhone();
+    return phoneInfo();
+  });
+  handle('phone:newToken', async () => {
+    phoneCfg.token = newToken();
+    savePhone();
+    phone.stop(); // drops paired phones
+    await applyPhone();
+    return phoneInfo();
   });
 
   settings = { ...DEFAULTS, ...readJson(settingsFile(), {}) };
   applyDataConfig();
+  phoneCfg = { enabled: false, token: newToken(), ...readJson(phoneFile(), {}) };
+  savePhone();
+  applyPhone();
   lastScan = readJson(lastScanFile(), null);
   for (const c of [...(lastScan?.bullish || []), ...(lastScan?.bearish || []), ...(lastScan?.watchlist || [])]) {
     if (c.confidence === 'High' || (c.onWatch && Math.abs(c.newsScore) >= 3)) notified.add(`${c.symbol}:${Math.sign(c.composite)}`);
@@ -550,7 +615,7 @@ function start(launcher) {
   trackRecord().then(() => {
     if (lastScan) {
       attachChances(lastScan);
-      win?.webContents.send('scan:result', lastScan);
+      send('scan:result', lastScan);
     }
   }).catch(() => {});
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow(launcher));

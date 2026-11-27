@@ -294,7 +294,7 @@
           <label>Account size for trade sizing ($)<input name="accountSize" type="number" min="0" step="100" /></label>
           <label>Risk per trade (% of account)<input name="riskPct" type="number" min="0.1" max="10" step="0.1" /></label>
         </div>
-        <label class="check"><input type="checkbox" name="notify" /> Desktop notification for new high-confidence signals</label>
+        <label class="check desktop-only"><input type="checkbox" name="notify" /> Desktop notification for new high-confidence signals</label>
         <div><button class="btn" type="submit">Save</button> <span id="saved" class="muted small"></span></div>
       </form>
       <div class="card about" id="appearance" style="margin-bottom:16px">
@@ -308,7 +308,7 @@
         <div id="themeCandles" class="theme-row"></div>
         <button type="button" class="btn ghost" id="themeReset" style="margin-top:12px">Reset to default</button>
       </div>
-      <div class="card about" style="margin-bottom:16px">
+      <div class="card about desktop-only" style="margin-bottom:16px">
         <h3>Licensed market data</h3>
         <p class="small muted">Personal mode uses free public sources. For licensed data (required before selling the app), add a <a data-url="https://polygon.io/pricing">Polygon.io</a> API key: prices, charts, live quotes and news then come from Polygon, with the free sources as backup.</p>
         <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -320,7 +320,26 @@
         <div id="polyStatus" class="small" style="margin-top:8px"></div>
         <label class="check" style="margin-top:10px"><input type="checkbox" id="licensedOnly" /> Licensed sources only (turns off all free public sources)</label>
       </div>
-      <div class="card about" style="margin-bottom:16px">
+      <div class="card about phone-card desktop-only" style="margin-bottom:16px">
+        <h3>Phone app</h3>
+        <p class="small muted">Use Market Radar on your iPhone or Android phone. It shows this Mac's live data (signals, watchlist, paper account, track record, settings) and changes you make on the phone happen here too. The phone must be on the same Wi-Fi as this Mac, and this app must be open.</p>
+        <label class="check"><input type="checkbox" id="phoneOn" /> Allow my phone to connect</label>
+        <div id="phoneBody" class="phone-body hidden">
+          <div id="phoneQr" class="phone-qr"></div>
+          <div class="phone-steps small">
+            <ol>
+              <li>Point your phone's camera at the code and open the link.</li>
+              <li>iPhone: tap <b>Share</b> → <b>Add to Home Screen</b>. Android (Chrome): tap <b>⋮</b> → <b>Add to Home screen</b>.</li>
+              <li>Open Market Radar from your home screen.</li>
+            </ol>
+            <div class="muted">Or type this address in the phone's browser: <code id="phoneUrl"></code></div>
+            <div class="muted">Pairing code: <code id="phoneToken"></code></div>
+            <div id="phoneStatus" class="muted"></div>
+            <button class="btn" id="phoneNew" type="button" style="margin-top:8px">New pairing code (disconnects phones)</button>
+          </div>
+        </div>
+      </div>
+      <div class="card about desktop-only" style="margin-bottom:16px">
         <h3>Updates</h3>
         <p class="small muted">Market Radar updates itself automatically: it checks for a new version on launch and every 3 hours, downloads it in the background, and switches to it the next time you restart.</p>
         <div id="updInfo" class="small"></div>
@@ -338,6 +357,8 @@
 
   <div id="drawer" class="drawer hidden"><div class="drawer-inner"></div></div>
   <script src="vendor/lightweight-charts.standalone.production.js"></script>
+  <script src="vendor/qrcode.js"></script>
+  <script src="phone.js"></script>
   <script src="app.js"></script>
   <script src="school.js"></script>
   <script src="learn.js"></script>
