@@ -31,11 +31,21 @@ function addresses() {
   return out;
 }
 
+// Tailscale gives each device an address in 100.64.0.0/10; those reach the Mac from anywhere.
+const isTailnet = (a) => { const [x, y] = a.split('.').map(Number); return x === 100 && y >= 64 && y <= 127; };
+
+// Addresses on this Wi-Fi / network
 function urls() {
   if (!server) return [];
   const p = state.port;
   const host = os.hostname().replace(/\.local$/, '');
-  return [...addresses().map((a) => `http://${a}:${p}`), `http://${host}.local:${p}`];
+  return [...addresses().filter((a) => !isTailnet(a)).map((a) => `http://${a}:${p}`), `http://${host}.local:${p}`];
+}
+
+// Addresses that work away from home (Tailscale on the Mac and the phone)
+function remoteUrls() {
+  if (!server) return [];
+  return addresses().filter(isTailnet).map((a) => `http://${a}:${state.port}`);
 }
 
 // index.html for phones: add the home-screen app tags
@@ -140,4 +150,4 @@ function broadcast(ch, data) {
   for (const c of clients) c.res.write(msg);
 }
 
-module.exports = { start, stop, broadcast, urls, running: () => !!server, port: () => state?.port, clientCount: () => clients.size };
+module.exports = { start, stop, broadcast, urls, remoteUrls, running: () => !!server, port: () => state?.port, clientCount: () => clients.size };

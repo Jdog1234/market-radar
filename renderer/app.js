@@ -586,16 +586,39 @@ function renderPhone(info) {
     $('#phoneToken').textContent = info.token;
     return;
   }
-  const link = `${info.urls[0]}/?t=${info.token}`;
-  const qr = qrcode(0, 'M');
-  qr.addData(link);
-  qr.make();
-  $('#phoneQr').innerHTML = qr.createSvgTag({ cellSize: 5, margin: 3, scalable: true });
-  $('#phoneUrl').textContent = info.urls[0];
+  const remote = info.remote || [];
+  if (!remote.length) phoneWhere = 'home';
+  else if (!phoneWhere) phoneWhere = 'remote'; // works at home and away, so it's the better default
+  const useRemote = phoneWhere === 'remote' && remote.length > 0;
+  const base = useRemote ? remote[0] : info.urls[0];
+  $('#phoneWhere').classList.toggle('hidden', !remote.length);
+  $$('#phoneWhere button').forEach((b) => b.classList.toggle('on', b.dataset.where === (useRemote ? 'remote' : 'home')));
+  const link = `${base}/?t=${info.token}`;
+  if ($('#phoneQr').dataset.link !== link) {
+    const qr = qrcode(0, 'M');
+    qr.addData(link);
+    qr.make();
+    $('#phoneQr').innerHTML = qr.createSvgTag({ cellSize: 5, margin: 3, scalable: true });
+    $('#phoneQr').dataset.link = link;
+  }
+  $('#phoneUrl').textContent = base;
   $('#phoneToken').textContent = info.token;
-  const more = info.urls.length > 1 ? ` Other addresses for this Mac: ${info.urls.slice(1).join(', ')}.` : '';
+  const others = [...remote, ...info.urls].filter((u) => u !== base);
+  const more = others.length ? ` Other addresses for this Mac: ${others.join(', ')}.` : '';
   $('#phoneStatus').textContent = (info.connected ? `${info.connected} phone${info.connected > 1 ? 's' : ''} connected now.` : 'No phone connected right now.') + more;
+  $('#phoneRemoteHint').innerHTML = useRemote
+    ? 'This code works anywhere (home Wi-Fi, cellular, other Wi-Fi) while <b>Tailscale is on</b> on your phone. This Mac must be on, awake and running Market Radar. If you added the app before, add it again from this code.'
+    : remote.length
+      ? 'This code only works on the same Wi-Fi as this Mac. Pick <b>Anywhere</b> to use the phone away from home.'
+      : 'Away from home? Install the free <a data-url="https://tailscale.com/download">Tailscale</a> app on this Mac and your phone and sign in to the same account on both. An <b>Anywhere</b> code then appears here.';
 }
+let phoneWhere = null;
+$('#phoneWhere').addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-where]');
+  if (!b || !radar.phone) return;
+  phoneWhere = b.dataset.where;
+  renderPhone(await radar.phone.info());
+});
 if (radar.phone) {
   radar.phone.info().then(renderPhone);
   $('#phoneOn').addEventListener('change', async (e) => renderPhone(await radar.phone.set(e.target.checked)));

@@ -352,7 +352,9 @@ async function applyPhone() {
   }
 }
 function phoneInfo() {
-  return { enabled: phoneCfg.enabled, running: phone.running(), urls: phoneUrls, token: phoneCfg.token, connected: phone.clientCount() };
+  // Addresses are read live so Tailscale turning on/off shows up without restarting.
+  const live = phone.running();
+  return { enabled: phoneCfg.enabled, running: live, urls: live ? phone.urls() : phoneUrls, remote: live ? phone.remoteUrls() : [], token: phoneCfg.token, connected: phone.clientCount() };
 }
 
 async function runScan() {

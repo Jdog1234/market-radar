@@ -322,10 +322,16 @@
       </div>
       <div class="card about phone-card desktop-only" style="margin-bottom:16px">
         <h3>Phone app</h3>
-        <p class="small muted">Use Market Radar on your iPhone or Android phone. It shows this Mac's live data (signals, watchlist, paper account, track record, settings) and changes you make on the phone happen here too. The phone must be on the same Wi-Fi as this Mac, and this app must be open.</p>
+        <p class="small muted">Use Market Radar on your iPhone or Android phone. It shows this Mac's live data (signals, watchlist, paper account, track record, settings) and changes you make on the phone happen here too. The phone must be on the same Wi-Fi as this Mac (or, away from home, use Tailscale as explained below), and this app must be open with the Mac awake.</p>
         <label class="check"><input type="checkbox" id="phoneOn" /> Allow my phone to connect</label>
         <div id="phoneBody" class="phone-body hidden">
-          <div id="phoneQr" class="phone-qr"></div>
+          <div>
+            <div id="phoneWhere" class="pt-chips phone-where hidden">
+              <button type="button" data-where="remote">Anywhere (Tailscale)</button>
+              <button type="button" data-where="home">Home Wi-Fi only</button>
+            </div>
+            <div id="phoneQr" class="phone-qr"></div>
+          </div>
           <div class="phone-steps small">
             <ol>
               <li>Point your phone's camera at the code and open the link.</li>
@@ -335,6 +341,7 @@
             <div class="muted">Or type this address in the phone's browser: <code id="phoneUrl"></code></div>
             <div class="muted">Pairing code: <code id="phoneToken"></code></div>
             <div id="phoneStatus" class="muted"></div>
+            <div id="phoneRemoteHint" class="muted phone-hint"></div>
             <button class="btn" id="phoneNew" type="button" style="margin-top:8px">New pairing code (disconnects phones)</button>
           </div>
         </div>
