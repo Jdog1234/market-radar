@@ -663,4 +663,9 @@ body.live-trading .pt-submit::after { content: ' · LIVE'; font-weight: 800; }
   .tv-right { width: auto; border-left: 0; border-top: 1px solid var(--tv-line); flex-direction: column-reverse; padding-bottom: 12px; }
   .tv-watch .tv-wlist { max-height: none; }
   .tv-q { min-width: 76px; padding: 6px 12px; }
+  .tv-quick { top: auto; bottom: 40px; }
+  .tv-q { background: var(--tv-bg); }
+  .tv-legend { right: 64px; }
+  .tv-legend .l1 { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
+  .tv-legend .ind { display: none; }
 }
