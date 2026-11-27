@@ -545,6 +545,35 @@ radar.onUpdate(renderUpdate);
   renderUpdate(await radar.updateStatus());
 })();
 
+// ---------- phone app (desktop side: pairing card in Settings) ----------
+function renderPhone(info) {
+  $('#phoneOn').checked = info.enabled;
+  $('#phoneBody').classList.toggle('hidden', !info.enabled);
+  if (!info.enabled) return;
+  if (!info.running || !info.urls.length) {
+    $('#phoneStatus').textContent = "Couldn't start the phone connection. Check that this Mac is on Wi-Fi, then turn it off and on again.";
+    $('#phoneQr').innerHTML = '';
+    $('#phoneUrl').textContent = '—';
+    $('#phoneToken').textContent = info.token;
+    return;
+  }
+  const link = `${info.urls[0]}/?t=${info.token}`;
+  const qr = qrcode(0, 'M');
+  qr.addData(link);
+  qr.make();
+  $('#phoneQr').innerHTML = qr.createSvgTag({ cellSize: 5, margin: 3, scalable: true });
+  $('#phoneUrl').textContent = info.urls[0];
+  $('#phoneToken').textContent = info.token;
+  const more = info.urls.length > 1 ? ` Other addresses for this Mac: ${info.urls.slice(1).join(', ')}.` : '';
+  $('#phoneStatus').textContent = (info.connected ? `${info.connected} phone${info.connected > 1 ? 's' : ''} connected now.` : 'No phone connected right now.') + more;
+}
+if (radar.phone) {
+  radar.phone.info().then(renderPhone);
+  $('#phoneOn').addEventListener('change', async (e) => renderPhone(await radar.phone.set(e.target.checked)));
+  $('#phoneNew').addEventListener('click', async () => renderPhone(await radar.phone.newToken()));
+  setInterval(() => { if (!$('#view-settings').classList.contains('hidden')) radar.phone.info().then(renderPhone); }, 5000);
+}
+
 // ---------- before the move ----------
 let settingsCache = null;
 

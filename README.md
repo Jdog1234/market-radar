@@ -59,6 +59,16 @@ If you change `main.js` (the launcher), Electron, or the `build` settings, also 
 - ⚠ flags mark things to be careful about: earnings coming up, stocks already extended, or price moving against the news.
 - Settings: your watchlist (always scanned), minimum market cap and price filters (to keep out penny-stock hype), and desktop notifications.
 
+## Phone app
+
+Market Radar can run on your iPhone or Android phone, showing this computer's live data: signals, watchlist, paper account (positions, orders, history), track record, research guide and settings. Anything you change on the phone (orders, watchlist, settings) happens on the computer too.
+
+1. On the computer, open **Settings → Phone app** and tick **Allow my phone to connect**. If macOS asks whether to allow incoming connections, click **Allow**.
+2. Scan the QR code with your phone's camera and open the link.
+3. iPhone: **Share → Add to Home Screen**. Android (Chrome): **⋮ → Add to Home screen**. Then open Market Radar from the home screen.
+
+The phone and the computer must be on the same Wi-Fi, and the app must be open on the computer (it is the computer that runs the scans and the paper account). To use it away from home, install [Tailscale](https://tailscale.com) on both and use the computer's Tailscale address. **New pairing code** disconnects every paired phone. If the connection drops, the phone keeps showing the last data it received until it reconnects.
+
 The app's settings and last scan are stored in `~/Library/Application Support/Market Radar` on Mac and `%APPDATA%\Market Radar` on Windows.
 
 ## Develop / rebuild

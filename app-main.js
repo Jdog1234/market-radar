@@ -10,6 +10,8 @@ const { setCacheDir } = require('./engine/universe');
 const { PaperAccount, marketOpen } = require('./engine/paper');
 const { quotes, candles } = require('./engine/quotes');
 const { YahooStream } = require('./engine/stream');
+const phone = require('./engine/phone-server');
+const crypto = require('crypto');
 
 const DEFAULTS = {
   watchlist: ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'AMD', 'GOOGL'],
@@ -41,12 +43,20 @@ let scanning = false;
 let timer = null;
 let trackCache = { at: 0, data: null };
 let paper;
-let paperWatch = []; // symbols the paper-trading screen is showing (chart + watchlist)
+let paperWatch = []; // symbols the paper-trading screens are showing (desktop + phone, combined)
+const watchBy = {}; // client -> { syms, at }
 let lastQuotes = {};
 const stream = new YahooStream();
 
 const send = (ch, d) => {
   if (win && !win.isDestroyed()) win.webContents.send(ch, d);
+  phone.broadcast(ch, d);
+};
+// Every IPC handler is also kept here so the phone server can call the same code.
+const H = {};
+const handle = (ch, fn) => {
+  H[ch] = fn;
+  ipcMain.handle(ch, fn);
 };
 const feed = () => ({ mode: stream.healthy() ? 'stream' : 'poll', connected: stream.connected, lastTickAt: stream.lastTickAt || null });
 const snapshot = () => ({ account: paper.summary(), quotes: lastQuotes, feed: feed() });
@@ -185,12 +195,36 @@ function createWindow(launcher) {
   });
 }
 
+// ---- Phone app: the Mac serves the same UI + data to phones on the same Wi-Fi ----
+const phoneFile = () => path.join(dataDir(), 'phone.json');
+let phoneCfg = { enabled: false, token: '' };
+const newToken = () => crypto.randomBytes(12).toString('base64url');
+const savePhone = () => fs.writeFileSync(phoneFile(), JSON.stringify(phoneCfg, null, 2));
+let phoneUrls = [];
+async function applyPhone() {
+  if (phoneCfg.enabled) {
+    phoneUrls = await phone.start({
+      port: 8765,
+      getToken: () => phoneCfg.token,
+      handlers: H,
+      rendererDir: path.join(__dirname, 'renderer'),
+      version: require('./package.json').version,
+    });
+  } else {
+    phone.stop();
+    phoneUrls = [];
+  }
+}
+function phoneInfo() {
+  return { enabled: phoneCfg.enabled, running: phone.running(), urls: phoneUrls, token: phoneCfg.token, connected: phone.clientCount() };
+}
+
 async function runScan() {
   if (scanning) return lastScan;
   scanning = true;
-  win?.webContents.send('scan:progress', { stage: 'Starting…', pct: 0 });
+  send('scan:progress', { stage: 'Starting…', pct: 0 });
   try {
-    const result = await scan({ ...settings, econCacheFile: path.join(dataDir(), 'econ-cache.json') }, (p) => win?.webContents.send('scan:progress', p));
+    const result = await scan({ ...settings, econCacheFile: path.join(dataDir(), 'econ-cache.json') }, (p) => send('scan:progress', p));
     // Calendars are rate-limited upstream; keep the last good copy rather than showing nothing.
     if (!result.econ.length && lastScan?.econ?.length) result.econ = lastScan.econ;
     if (!result.earnings.length && lastScan?.earnings?.length) result.earnings = lastScan.earnings;
@@ -201,9 +235,9 @@ async function runScan() {
     } catch {}
     attachChances(result);
     notifyNew(result);
-    win?.webContents.send('scan:result', result);
+    send('scan:result', result);
   } catch (err) {
-    win?.webContents.send('scan:error', String(err?.message || err));
+    send('scan:error', String(err?.message || err));
   } finally {
     scanning = false;
   }
@@ -233,32 +267,36 @@ function schedule() {
 
 function start(launcher) {
   setCacheDir(dataDir());
-  ipcMain.handle('settings:get', () => settings);
-  ipcMain.handle('settings:set', (_e, next) => {
+  handle('settings:get', () => settings);
+  handle('settings:set', (_e, next) => {
     settings = { ...settings, ...next };
     fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
     schedule();
     return settings;
   });
-  ipcMain.handle('scan:last', () => lastScan);
-  ipcMain.handle('scan:run', () => runScan());
-  ipcMain.handle('stock:search', (_e, q) => search(q));
-  ipcMain.handle('stock:lookup', (_e, sym) => lookup(sym, lastScan));
-  ipcMain.handle('track:get', () => trackRecord(true));
-  ipcMain.handle('paper:get', () => snapshot());
-  ipcMain.handle('paper:watch', async (_e, syms) => {
-    paperWatch = [...new Set((syms || []).map((x) => String(x).toUpperCase().trim()).filter(Boolean))].slice(0, 60);
+  handle('scan:last', () => lastScan);
+  handle('scan:run', () => runScan());
+  handle('stock:search', (_e, q) => search(q));
+  handle('stock:lookup', (_e, sym) => lookup(sym, lastScan));
+  handle('track:get', () => trackRecord(true));
+  handle('paper:get', () => snapshot());
+  handle('paper:watch', async (_e, syms) => {
+    const mine = [...new Set((syms || []).map((x) => String(x).toUpperCase().trim()).filter(Boolean))].slice(0, 60);
+    watchBy[_e?.client || 'desktop'] = { syms: mine, at: Date.now() };
+    // a phone that stopped asking for a while is gone; drop its symbols
+    for (const [k, v] of Object.entries(watchBy)) if (k !== 'desktop' && Date.now() - v.at > 10 * 60e3) delete watchBy[k];
+    paperWatch = [...new Set(Object.values(watchBy).flatMap((v) => v.syms))].slice(0, 80);
     streamSymbols();
     // Names, previous close and a first price for anything we haven't seen yet.
-    const missing = paperWatch.filter((x) => !lastQuotes[x]?.name);
+    const missing = mine.filter((x) => !lastQuotes[x]?.name);
     if (missing.length) {
       mergePolled(await quotes(missing).catch(() => ({})));
       paper.tick(lastQuotes);
     }
     return snapshot();
   });
-  ipcMain.handle('paper:candles', (_e, sym, tf) => candles(sym, tf));
-  ipcMain.handle('paper:order', async (_e, o) => {
+  handle('paper:candles', (_e, sym, tf) => candles(sym, tf));
+  handle('paper:order', async (_e, o) => {
     // Make sure we have a fresh price before accepting the order (the stream usually has one).
     const sym = String(o?.symbol || '').toUpperCase();
     const q = lastQuotes[sym];
@@ -268,17 +306,35 @@ function start(launcher) {
     }
     return paperDo(() => paper.place(o));
   });
-  ipcMain.handle('paper:cancel', (_e, id) => paperDo(() => paper.cancel(id)));
-  ipcMain.handle('paper:modify', (_e, id, changes) => paperDo(() => paper.modify(Number(id), changes || {})));
-  ipcMain.handle('paper:close', (_e, sym) => paperDo(() => paper.close(sym)));
-  ipcMain.handle('paper:bracket', (_e, sym, b) => paperDo(() => paper.modifyBracket(sym, b)));
-  ipcMain.handle('paper:reset', (_e, cash) => paperDo(() => paper.reset(Number(cash) || settings.accountSize || 10000)));
-  ipcMain.handle('guide:get', () => fs.readFileSync(path.join(__dirname, 'RESEARCH.md'), 'utf8'));
-  ipcMain.handle('open:external', (_e, url) => {
+  handle('paper:cancel', (_e, id) => paperDo(() => paper.cancel(id)));
+  handle('paper:modify', (_e, id, changes) => paperDo(() => paper.modify(Number(id), changes || {})));
+  handle('paper:close', (_e, sym) => paperDo(() => paper.close(sym)));
+  handle('paper:bracket', (_e, sym, b) => paperDo(() => paper.modifyBracket(sym, b)));
+  handle('paper:reset', (_e, cash) => paperDo(() => paper.reset(Number(cash) || settings.accountSize || 10000)));
+  handle('guide:get', () => fs.readFileSync(path.join(__dirname, 'RESEARCH.md'), 'utf8'));
+  handle('open:external', (_e, url) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
   });
 
+  handle('phone:info', () => phoneInfo());
+  handle('phone:set', async (_e, on) => {
+    phoneCfg.enabled = !!on;
+    savePhone();
+    await applyPhone();
+    return phoneInfo();
+  });
+  handle('phone:newToken', async () => {
+    phoneCfg.token = newToken();
+    savePhone();
+    phone.stop(); // drops paired phones
+    await applyPhone();
+    return phoneInfo();
+  });
+
   settings = { ...DEFAULTS, ...readJson(settingsFile(), {}) };
+  phoneCfg = { enabled: false, token: newToken(), ...readJson(phoneFile(), {}) };
+  savePhone();
+  applyPhone();
   lastScan = readJson(lastScanFile(), null);
   for (const c of [...(lastScan?.bullish || []), ...(lastScan?.bearish || []), ...(lastScan?.watchlist || [])]) {
     if (c.confidence === 'High' || (c.onWatch && Math.abs(c.newsScore) >= 3)) notified.add(`${c.symbol}:${Math.sign(c.composite)}`);
@@ -291,7 +347,7 @@ function start(launcher) {
   trackRecord().then(() => {
     if (lastScan) {
       attachChances(lastScan);
-      win?.webContents.send('scan:result', lastScan);
+      send('scan:result', lastScan);
     }
   }).catch(() => {});
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow(launcher));

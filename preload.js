@@ -28,6 +28,11 @@ contextBridge.exposeInMainWorld('radar', {
     onUpdate: (fn) => ipcRenderer.on('paper:update', (_e, d) => fn(d)),
     onTick: (fn) => ipcRenderer.on('paper:tick', (_e, d) => fn(d)),
   },
+  phone: {
+    info: () => ipcRenderer.invoke('phone:info'),
+    set: (on) => ipcRenderer.invoke('phone:set', on),
+    newToken: () => ipcRenderer.invoke('phone:newToken'),
+  },
   onUpdate: (fn) => ipcRenderer.on('update:status', (_e, s) => fn(s)),
   onProgress: (fn) => ipcRenderer.on('scan:progress', (_e, p) => fn(p)),
   onResult: (fn) => ipcRenderer.on('scan:result', (_e, r) => fn(r)),
